@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppView, StoryConfig, HistoryItem } from './types';
+import { AppView, StoryConfig, HistoryItem, ImageHistoryItem } from './types';
 import { StoryWizard } from './components/StoryWizard';
 import { StoryView } from './components/StoryView';
 import { ImageStudio } from './components/ImageStudio';
@@ -10,19 +10,35 @@ const App: React.FC = () => {
   const [view, setView] = useState<AppView>(AppView.DASHBOARD);
   const [generatedStory, setGeneratedStory] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  
+  // History States
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [imageHistory, setImageHistory] = useState<ImageHistoryItem[]>([]);
+  const [libraryTab, setLibraryTab] = useState<'STORIES' | 'IMAGES'>('STORIES');
+  
+  // Active states for editing
+  const [selectedImageToEdit, setSelectedImageToEdit] = useState<ImageHistoryItem | null>(null);
 
   // Load History on Mount
   useEffect(() => {
-    const saved = localStorage.getItem('mythos_history');
-    if (saved) {
+    const savedStories = localStorage.getItem('mythos_history');
+    if (savedStories) {
       try {
-        setHistory(JSON.parse(saved));
+        setHistory(JSON.parse(savedStories));
       } catch (e) {
         console.error("Failed to parse history", e);
       }
     }
-  }, []);
+
+    const savedImages = localStorage.getItem('mythos_image_history');
+    if (savedImages) {
+      try {
+          setImageHistory(JSON.parse(savedImages));
+      } catch (e) {
+          console.error("Failed to parse image history", e);
+      }
+    }
+  }, [view]); // Reload when view changes to keep sync
 
   const saveToHistory = (content: string, config: StoryConfig) => {
     const titleLine = content.split('\n').find(l => l.startsWith('# '));
@@ -77,12 +93,24 @@ const App: React.FC = () => {
       setView(AppView.STORY_RESULT);
   };
 
+  const loadImageItem = (item: ImageHistoryItem) => {
+      setSelectedImageToEdit(item);
+      setView(AppView.IMAGE_STUDIO);
+  };
+
   const deleteHistoryItem = (e: React.MouseEvent, id: string) => {
       e.stopPropagation();
       const newHistory = history.filter(h => h.id !== id);
       setHistory(newHistory);
       localStorage.setItem('mythos_history', JSON.stringify(newHistory));
   }
+  
+  const deleteImageItem = (e: React.MouseEvent, id: string) => {
+      e.stopPropagation();
+      const newHistory = imageHistory.filter(h => h.id !== id);
+      setImageHistory(newHistory);
+      localStorage.setItem('mythos_image_history', JSON.stringify(newHistory));
+  };
 
   const renderContent = () => {
     // If generating but no text yet, show thinking state
@@ -113,41 +141,83 @@ const App: React.FC = () => {
             />
         );
       case AppView.IMAGE_STUDIO:
-        return <ImageStudio />;
+        return <ImageStudio initialImage={selectedImageToEdit} />;
       case AppView.CHAT:
         return <ChatSection />;
       case AppView.HISTORY:
         return (
-            <div className="max-w-5xl mx-auto animate-fade-in">
-                <div className="flex justify-between items-center mb-8">
-                    <h2 className="text-3xl font-serif text-white">Your Chronicles</h2>
-                    <button onClick={() => setView(AppView.DASHBOARD)} className="text-gray-400 hover:text-white">Back to Dashboard</button>
+            <div className="max-w-6xl mx-auto animate-fade-in">
+                <div className="flex flex-col md:flex-row justify-between items-end md:items-center mb-8 gap-4">
+                    <h2 className="text-3xl font-serif text-white">Library</h2>
+                    <div className="flex bg-brand-800 p-1 rounded-lg border border-brand-700">
+                        <button 
+                            onClick={() => setLibraryTab('STORIES')}
+                            className={`px-4 py-2 rounded-md text-sm font-bold transition-colors ${libraryTab === 'STORIES' ? 'bg-brand-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                        >
+                            Stories
+                        </button>
+                        <button 
+                            onClick={() => setLibraryTab('IMAGES')}
+                            className={`px-4 py-2 rounded-md text-sm font-bold transition-colors ${libraryTab === 'IMAGES' ? 'bg-brand-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                        >
+                            Images
+                        </button>
+                    </div>
                 </div>
-                {history.length === 0 ? (
-                    <div className="text-center py-20 bg-brand-800 rounded-2xl border border-brand-700">
-                        <span className="material-symbols-outlined text-6xl text-gray-600 mb-4">history_edu</span>
-                        <p className="text-gray-400 text-lg">No stories written yet.</p>
-                        <button onClick={() => setView(AppView.WIZARD)} className="mt-4 text-brand-accent hover:text-white">Start writing</button>
-                    </div>
+
+                {libraryTab === 'STORIES' ? (
+                    history.length === 0 ? (
+                        <div className="text-center py-20 bg-brand-800 rounded-2xl border border-brand-700">
+                            <span className="material-symbols-outlined text-6xl text-gray-600 mb-4">history_edu</span>
+                            <p className="text-gray-400 text-lg">No stories written yet.</p>
+                            <button onClick={() => setView(AppView.WIZARD)} className="mt-4 text-brand-accent hover:text-white font-medium">Start writing</button>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {history.map(item => (
+                                <div key={item.id} onClick={() => loadHistoryItem(item)} className="bg-brand-800 rounded-xl p-6 border border-brand-700 hover:border-brand-gold transition-all cursor-pointer group relative hover:shadow-xl hover:-translate-y-1">
+                                    <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={(e) => deleteHistoryItem(e, item.id)} className="text-gray-500 hover:text-red-400 p-1">
+                                            <span className="material-symbols-outlined text-sm">delete</span>
+                                        </button>
+                                    </div>
+                                    <h3 className="text-xl font-serif text-white mb-2 line-clamp-1 group-hover:text-brand-gold transition-colors">{item.title}</h3>
+                                    <p className="text-xs text-gray-500 mb-4">{new Date(item.timestamp).toLocaleDateString()}</p>
+                                    <p className="text-sm text-gray-400 line-clamp-3 mb-4">{item.excerpt}</p>
+                                    <div className="flex gap-2">
+                                        <span className="text-xs px-2 py-1 bg-brand-900 rounded text-brand-accent">{item.config.genre}</span>
+                                        <span className="text-xs px-2 py-1 bg-brand-900 rounded text-gray-400">{item.config.lengthStructure.split(' ')[0]}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {history.map(item => (
-                            <div key={item.id} onClick={() => loadHistoryItem(item)} className="bg-brand-800 rounded-xl p-6 border border-brand-700 hover:border-brand-gold transition-all cursor-pointer group relative hover:shadow-xl hover:-translate-y-1">
-                                <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button onClick={(e) => deleteHistoryItem(e, item.id)} className="text-gray-500 hover:text-red-400 p-1">
-                                        <span className="material-symbols-outlined text-sm">delete</span>
-                                    </button>
+                    // IMAGES TAB
+                    imageHistory.length === 0 ? (
+                         <div className="text-center py-20 bg-brand-800 rounded-2xl border border-brand-700">
+                            <span className="material-symbols-outlined text-6xl text-gray-600 mb-4">image</span>
+                            <p className="text-gray-400 text-lg">No images created yet.</p>
+                            <button onClick={() => setView(AppView.IMAGE_STUDIO)} className="mt-4 text-brand-gold hover:text-white font-medium">Open Studio</button>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
+                            {imageHistory.map(item => (
+                                <div key={item.id} onClick={() => loadImageItem(item)} className="bg-brand-800 rounded-xl overflow-hidden border border-brand-700 hover:border-brand-accent transition-all cursor-pointer group relative hover:shadow-xl hover:-translate-y-1 aspect-square">
+                                    <img src={item.imageData} alt={item.prompt} className="w-full h-full object-cover" />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-brand-900 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-4">
+                                        <p className="text-white font-bold text-sm truncate">{item.mode === 'CREATE' ? 'Generated' : 'Edited'}</p>
+                                        <p className="text-xs text-gray-300 line-clamp-2">{item.prompt}</p>
+                                    </div>
+                                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={(e) => deleteImageItem(e, item.id)} className="bg-black/50 hover:bg-red-500 text-white p-1.5 rounded-full backdrop-blur-sm">
+                                            <span className="material-symbols-outlined text-xs">delete</span>
+                                        </button>
+                                    </div>
                                 </div>
-                                <h3 className="text-xl font-serif text-white mb-2 line-clamp-1 group-hover:text-brand-gold transition-colors">{item.title}</h3>
-                                <p className="text-xs text-gray-500 mb-4">{new Date(item.timestamp).toLocaleDateString()}</p>
-                                <p className="text-sm text-gray-400 line-clamp-3 mb-4">{item.excerpt}</p>
-                                <div className="flex gap-2">
-                                    <span className="text-xs px-2 py-1 bg-brand-900 rounded text-brand-accent">{item.config.genre}</span>
-                                    <span className="text-xs px-2 py-1 bg-brand-900 rounded text-gray-400">{item.config.lengthStructure.split(' ')[0]}</span>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
+                            ))}
+                        </div>
+                    )
                 )}
             </div>
         );
@@ -175,7 +245,7 @@ const App: React.FC = () => {
                   <button onClick={() => setView(AppView.WIZARD)} className="bg-brand-accent hover:bg-indigo-500 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-lg hover:shadow-indigo-500/25 flex items-center gap-2">
                     Start a Story <span className="material-symbols-outlined">arrow_forward</span>
                   </button>
-                  <button onClick={() => setView(AppView.IMAGE_STUDIO)} className="bg-brand-800 hover:bg-brand-700 border border-brand-700 text-white px-8 py-3 rounded-xl font-medium transition-all flex items-center gap-2">
+                  <button onClick={() => { setSelectedImageToEdit(null); setView(AppView.IMAGE_STUDIO); }} className="bg-brand-800 hover:bg-brand-700 border border-brand-700 text-white px-8 py-3 rounded-xl font-medium transition-all flex items-center gap-2">
                     Open Studio <span className="material-symbols-outlined">palette</span>
                   </button>
                 </div>
@@ -201,7 +271,7 @@ const App: React.FC = () => {
 
               {/* Canvas Studio Card */}
               <button 
-                onClick={() => setView(AppView.IMAGE_STUDIO)}
+                onClick={() => { setSelectedImageToEdit(null); setView(AppView.IMAGE_STUDIO); }}
                 className="group relative bg-brand-800 p-8 rounded-3xl border border-brand-700 hover:border-brand-gold hover:bg-brand-800/80 transition-all text-left overflow-hidden h-full"
               >
                 <div className="absolute -right-10 -top-10 w-40 h-40 bg-brand-gold/10 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out"></div>
@@ -239,8 +309,8 @@ const App: React.FC = () => {
                     <div className="w-14 h-14 bg-brand-900 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-purple-500 transition-colors shadow-lg border border-brand-700">
                       <span className="material-symbols-outlined text-white text-2xl">history_edu</span>
                     </div>
-                    <h3 className="text-xl font-bold text-white mb-2 font-serif">Chronicles</h3>
-                    <p className="text-gray-400 group-hover:text-gray-200 text-xs leading-relaxed mb-4">Access your saved stories and drafts.</p>
+                    <h3 className="text-xl font-bold text-white mb-2 font-serif">Library</h3>
+                    <p className="text-gray-400 group-hover:text-gray-200 text-xs leading-relaxed mb-4">Access your saved stories and visual creations.</p>
                 </div>
               </button>
             </div>
@@ -372,22 +442,35 @@ const App: React.FC = () => {
                 </div>
             </div>
             
-            {/* Recent History Snippet (Optional - only if history exists) */}
-            {history.length > 0 && (
+            {/* Recent History Snippet (Combined) */}
+            {(history.length > 0 || imageHistory.length > 0) && (
               <div className="mt-12 bg-brand-900/50 border border-brand-700/50 rounded-2xl p-6">
                  <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-bold text-white">Continue Writing</h3>
+                    <h3 className="text-lg font-bold text-white">Continue Creating</h3>
                     <button onClick={() => setView(AppView.HISTORY)} className="text-xs text-brand-accent hover:text-white">View All</button>
                  </div>
                  <div className="grid gap-4 md:grid-cols-2">
-                    {history.slice(0, 2).map(item => (
+                    {/* Story Snippet */}
+                    {history.slice(0, 1).map(item => (
                        <div key={item.id} onClick={() => loadHistoryItem(item)} className="bg-brand-800 p-4 rounded-xl border border-brand-700 cursor-pointer hover:border-brand-600 flex items-center gap-4">
                           <div className="h-10 w-10 rounded bg-brand-700 flex items-center justify-center flex-shrink-0">
                              <span className="material-symbols-outlined text-gray-400">article</span>
                           </div>
                           <div className="overflow-hidden">
                              <h4 className="text-white font-medium truncate">{item.title}</h4>
-                             <p className="text-xs text-gray-500 truncate">{new Date(item.timestamp).toLocaleDateString()} • {item.config.genre}</p>
+                             <p className="text-xs text-gray-500 truncate">{new Date(item.timestamp).toLocaleDateString()} • Story</p>
+                          </div>
+                       </div>
+                    ))}
+                    {/* Image Snippet */}
+                    {imageHistory.slice(0, 1).map(item => (
+                       <div key={item.id} onClick={() => loadImageItem(item)} className="bg-brand-800 p-4 rounded-xl border border-brand-700 cursor-pointer hover:border-brand-600 flex items-center gap-4">
+                          <div className="h-10 w-10 rounded bg-brand-700 overflow-hidden flex-shrink-0">
+                             <img src={item.imageData} alt="" className="w-full h-full object-cover opacity-80" />
+                          </div>
+                          <div className="overflow-hidden">
+                             <h4 className="text-white font-medium truncate">{item.mode === 'CREATE' ? 'Generated Art' : 'Edited Image'}</h4>
+                             <p className="text-xs text-gray-500 truncate">{new Date(item.timestamp).toLocaleDateString()} • Visual</p>
                           </div>
                        </div>
                     ))}
@@ -421,7 +504,7 @@ const App: React.FC = () => {
                     Story
                 </button>
                 <button 
-                    onClick={() => setView(AppView.IMAGE_STUDIO)}
+                    onClick={() => { setSelectedImageToEdit(null); setView(AppView.IMAGE_STUDIO); }}
                     className={`text-sm font-medium px-5 py-2 rounded-full transition-all ${view === AppView.IMAGE_STUDIO ? 'bg-brand-700 text-white shadow-md' : 'text-gray-400 hover:text-white'}`}
                 >
                     Images
@@ -447,8 +530,6 @@ const App: React.FC = () => {
         {renderContent()}
       </main>
 
-      {/* Floating chat assistant removed */}
-      
       <style>{`
         @keyframes spin-reverse {
             to { transform: rotate(-360deg); }

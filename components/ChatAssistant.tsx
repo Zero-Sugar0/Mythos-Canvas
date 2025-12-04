@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { sendChatMessage } from '../services/geminiService';
-import { ChatMessage } from '../types';
+import { ChatMessage, ChatSession } from '../types';
 
 // Compact Rich Text Renderer for Chat
 const ChatRichText: React.FC<{ text: string }> = ({ text }) => {
@@ -59,13 +59,29 @@ const ChatRichText: React.FC<{ text: string }> = ({ text }) => {
 };
 
 export const ChatSection: React.FC = () => {
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isFastMode, setIsFastMode] = useState(false); // Default to Smart (Flash)
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Load history on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('mythos_chat_history');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        setSessions(parsed);
+      } catch (e) {
+        console.error("Failed to load chat history", e);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -81,32 +97,117 @@ export const ChatSection: React.FC = () => {
     }
   }, [input]);
 
+  // Helper to persist sessions
+  const persistSessions = (newSessions: ChatSession[]) => {
+      setSessions(newSessions);
+      localStorage.setItem('mythos_chat_history', JSON.stringify(newSessions));
+  };
+
+  const createNewSession = (firstMessage: ChatMessage) => {
+      const id = Date.now().toString();
+      const title = firstMessage.text.length > 30 
+        ? firstMessage.text.substring(0, 30) + '...' 
+        : firstMessage.text;
+      
+      const newSession: ChatSession = {
+          id,
+          title,
+          timestamp: Date.now(),
+          messages: [firstMessage]
+      };
+
+      const updatedSessions = [newSession, ...sessions];
+      persistSessions(updatedSessions);
+      setCurrentSessionId(id);
+      return id;
+  };
+
+  const updateSessionInStorage = (id: string, msgs: ChatMessage[]) => {
+      const updatedSessions = sessions.map(s => {
+          if (s.id === id) {
+              return { ...s, messages: msgs, timestamp: Date.now() };
+          }
+          return s;
+      });
+      
+      // Move current session to top
+      const current = updatedSessions.find(s => s.id === id);
+      const others = updatedSessions.filter(s => s.id !== id);
+      
+      if (current) {
+          persistSessions([current, ...others]);
+      } else {
+          persistSessions(updatedSessions);
+      }
+  };
+
+  const deleteSession = (e: React.MouseEvent, id: string) => {
+      e.stopPropagation();
+      const updated = sessions.filter(s => s.id !== id);
+      persistSessions(updated);
+      if (currentSessionId === id) {
+          setMessages([]);
+          setCurrentSessionId(null);
+      }
+  };
+
+  const loadSession = (session: ChatSession) => {
+      setMessages(session.messages);
+      setCurrentSessionId(session.id);
+      if (window.innerWidth < 768) setSidebarOpen(false);
+  };
+
+  const startNewChat = () => {
+      setMessages([]);
+      setCurrentSessionId(null);
+      if (window.innerWidth < 768) setSidebarOpen(false);
+  };
+
   const handleSend = async (textOverride?: string) => {
     const textToSend = textOverride || input;
     if (!textToSend.trim() || isLoading) return;
 
     const userMsg: ChatMessage = { role: 'user', text: textToSend, timestamp: Date.now() };
-    setMessages(prev => [...prev, userMsg]);
+    const newMessages = [...messages, userMsg];
+    
+    setMessages(newMessages);
     setInput('');
     setIsLoading(true);
 
-    // Format history for the SDK
+    let activeId = currentSessionId;
+
+    // Handle Session Creation/Update immediately so user doesn't lose data
+    if (!activeId) {
+        activeId = createNewSession(userMsg);
+    } else {
+        updateSessionInStorage(activeId, newMessages);
+    }
+
+    // Format history for the SDK (using previous messages)
     const history = messages.map(m => ({
       role: m.role,
       parts: [{ text: m.text }]
     }));
 
     // Choose model based on toggle
-    // Fast = Gemini Flash Lite, Smart = Gemini 2.5 Flash
     const model = isFastMode ? 'gemini-flash-lite-latest' : 'gemini-2.5-flash';
     
     const responseText = await sendChatMessage(history, userMsg.text, model);
     
-    setMessages(prev => [...prev, {
+    const modelMsg: ChatMessage = {
       role: 'model',
       text: responseText,
       timestamp: Date.now()
-    }]);
+    };
+    
+    const finalMessages = [...newMessages, modelMsg];
+    setMessages(finalMessages);
+    
+    // Update storage with final response
+    if (activeId) {
+        updateSessionInStorage(activeId, finalMessages);
+    }
+    
     setIsLoading(false);
   };
 
@@ -127,7 +228,7 @@ export const ChatSection: React.FC = () => {
       >
         <div className="p-3 flex flex-col h-full min-w-64">
             <button 
-                onClick={() => setMessages([])}
+                onClick={startNewChat}
                 className="flex items-center gap-2 w-full bg-brand-800/50 hover:bg-brand-800 text-white p-2.5 rounded-lg mb-4 transition-colors font-medium border border-brand-700/50 text-sm group"
             >
                 <span className="material-symbols-outlined text-brand-gold text-lg group-hover:rotate-90 transition-transform">add</span>
@@ -135,22 +236,38 @@ export const ChatSection: React.FC = () => {
             </button>
 
             <div className="flex-1 overflow-y-auto custom-scrollbar">
-                <h3 className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-3 px-2">Recent</h3>
-                <div className="space-y-0.5">
-                    {/* Mock History Items */}
-                    <div className="p-2 hover:bg-brand-800/30 rounded-md text-xs text-gray-400 cursor-pointer transition-colors flex items-center gap-2 group truncate">
-                        <span className="material-symbols-outlined text-gray-600 text-[14px] group-hover:text-gray-300">chat_bubble_outline</span>
-                        <span className="truncate">Story Brainstorming</span>
-                    </div>
-                     <div className="p-2 hover:bg-brand-800/30 rounded-md text-xs text-gray-400 cursor-pointer transition-colors flex items-center gap-2 group truncate">
-                        <span className="material-symbols-outlined text-gray-600 text-[14px] group-hover:text-gray-300">chat_bubble_outline</span>
-                        <span className="truncate">Character Development</span>
-                    </div>
+                <h3 className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-3 px-2">History</h3>
+                <div className="space-y-1">
+                    {sessions.length === 0 && (
+                        <p className="px-2 text-xs text-gray-600 italic">No previous chats</p>
+                    )}
+                    {sessions.map(session => (
+                        <div 
+                            key={session.id}
+                            onClick={() => loadSession(session)}
+                            className={`p-2 rounded-md text-xs cursor-pointer transition-all flex items-center gap-2 group truncate relative pr-8
+                                ${currentSessionId === session.id 
+                                    ? 'bg-brand-800 text-white border border-brand-700/50 shadow-sm' 
+                                    : 'text-gray-400 hover:bg-brand-800/30 hover:text-gray-300'
+                                }`}
+                        >
+                            <span className="material-symbols-outlined text-[14px] flex-shrink-0">chat_bubble_outline</span>
+                            <span className="truncate">{session.title}</span>
+                            
+                            <button 
+                                onClick={(e) => deleteSession(e, session.id)}
+                                className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 hover:text-red-400 p-1 transition-opacity"
+                                title="Delete Chat"
+                            >
+                                <span className="material-symbols-outlined text-[14px]">delete</span>
+                            </button>
+                        </div>
+                    ))}
                 </div>
             </div>
 
             <div className="mt-auto pt-3 border-t border-brand-800/50 text-[10px] text-gray-600 text-center">
-                Strong Mind v1.2
+                Strong Mind v1.3
             </div>
         </div>
       </div>

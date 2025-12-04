@@ -33,6 +33,13 @@ export interface ChatMessage {
   timestamp: number;
 }
 
+export interface ChatSession {
+  id: string;
+  title: string;
+  timestamp: number;
+  messages: ChatMessage[];
+}
+
 export interface HistoryItem {
   id: string;
   timestamp: number;
@@ -40,6 +47,14 @@ export interface HistoryItem {
   excerpt: string;
   content: string;
   config: StoryConfig;
+}
+
+export interface ImageHistoryItem {
+  id: string;
+  timestamp: number;
+  prompt: string;
+  imageData: string;
+  mode: 'CREATE' | 'EDIT';
 }
 
 export interface PageData {
