@@ -2,11 +2,67 @@ import React, { useState, useRef, useEffect } from 'react';
 import { sendChatMessage } from '../services/geminiService';
 import { ChatMessage } from '../types';
 
+// Compact Rich Text Renderer for Chat
+const ChatRichText: React.FC<{ text: string }> = ({ text }) => {
+  if (!text) return null;
+  const blocks = text.split(/\n\s*\n/);
+  
+  const parseInline = (str: string) => {
+    return str.split(/(\*\*.*?\*\*|\*.*?\*|`.*?`)/g).map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**')) return <strong key={i} className="font-bold">{part.slice(2, -2)}</strong>;
+      if (part.startsWith('*') && part.endsWith('*')) return <em key={i} className="italic">{part.slice(1, -1)}</em>;
+      if (part.startsWith('`') && part.endsWith('`')) return <code key={i} className="bg-black/30 px-1 rounded font-mono text-xs">{part.slice(1, -1)}</code>;
+      return part;
+    });
+  };
+
+  return (
+    <div className="space-y-2 text-sm">
+      {blocks.map((block, idx) => {
+        const trimmed = block.trim();
+        if (!trimmed) return null;
+
+        if (trimmed.startsWith('### ')) return <h3 key={idx} className="font-bold text-base mt-2">{trimmed.replace('### ', '')}</h3>;
+        if (trimmed.startsWith('## ')) return <h2 key={idx} className="font-bold text-lg mt-3 border-b border-white/10 pb-1">{trimmed.replace('## ', '')}</h2>;
+        
+        // Code Block
+        if (trimmed.startsWith('```')) {
+            const codeContent = trimmed.replace(/^```\w*\n?/, '').replace(/```$/, '');
+            return (
+                <div key={idx} className="bg-[#0a0f1c] p-3 rounded-lg border border-brand-700/50 my-2 overflow-x-auto">
+                    <pre className="font-mono text-xs text-gray-300"><code>{codeContent}</code></pre>
+                </div>
+            );
+        }
+
+        // List
+        if (trimmed.match(/^- /m) || trimmed.match(/^\d+\. /m)) {
+            const items = trimmed.split('\n');
+            return (
+                <ul key={idx} className="space-y-1 ml-4 list-disc">
+                    {items.map((item, i) => (
+                        <li key={i} className="pl-1">{parseInline(item.replace(/^- |^\d+\. /, ''))}</li>
+                    ))}
+                </ul>
+            );
+        }
+        
+        // Blockquote
+        if (trimmed.startsWith('> ')) {
+             return <blockquote key={idx} className="border-l-2 border-brand-gold pl-3 italic opacity-80 my-2">{parseInline(trimmed.replace(/> /g, ''))}</blockquote>
+        }
+
+        return <p key={idx} className="leading-relaxed">{parseInline(trimmed)}</p>;
+      })}
+    </div>
+  );
+};
+
 export const ChatSection: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isFastMode, setIsFastMode] = useState(false); // Default to Smart (Flash)
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -62,12 +118,12 @@ export const ChatSection: React.FC = () => {
   ];
 
   return (
-    <div className="flex h-full w-full bg-[#0f172a] relative">
+    <div className="flex h-full w-full bg-[#0f172a] overflow-hidden">
       
       {/* Sidebar */}
       <div 
         className={`${sidebarOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full opacity-0'} 
-        bg-[#0a0f1c] transition-all duration-300 ease-in-out border-r border-brand-800 flex flex-col z-20 absolute md:relative h-full`}
+        bg-[#0a0f1c] transition-all duration-300 ease-in-out border-r border-brand-800 flex flex-col z-20 h-full flex-shrink-0`}
       >
         <div className="p-3 flex flex-col h-full min-w-64">
             <button 
@@ -100,7 +156,7 @@ export const ChatSection: React.FC = () => {
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col min-w-0 bg-[#0f172a] relative">
+      <div className="flex-1 flex flex-col min-w-0 bg-[#0f172a] relative h-full">
         
         {/* Toggle Sidebar Button */}
         <div className="absolute top-3 left-3 z-20">
@@ -115,7 +171,7 @@ export const ChatSection: React.FC = () => {
         </div>
 
         {/* Messages Container */}
-        <div className="flex-1 overflow-y-auto p-4 md:px-20 md:py-4 scroll-smooth custom-scrollbar" ref={scrollRef}>
+        <div className="flex-1 overflow-y-auto px-4 py-4 scroll-smooth custom-scrollbar" ref={scrollRef}>
             {messages.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center max-w-2xl mx-auto text-center px-4 pb-20">
                      <div className="w-10 h-10 bg-brand-800/50 rounded-xl flex items-center justify-center mb-4 shadow-lg border border-brand-700/50">
@@ -129,7 +185,7 @@ export const ChatSection: React.FC = () => {
                             <button 
                                 key={i}
                                 onClick={() => handleSend(s)}
-                                className="px-2.5 py-1.5 bg-brand-800/30 hover:bg-brand-800 border border-brand-700/30 hover:border-brand-600 rounded-lg text-[10px] text-gray-400 hover:text-white transition-all flex items-center gap-2 group"
+                                className="px-2 py-1.5 bg-brand-800/30 hover:bg-brand-800 border border-brand-700/30 hover:border-brand-600 rounded-lg text-[10px] text-gray-400 hover:text-white transition-all flex items-center gap-2 group"
                             >
                                 <span className="material-symbols-outlined text-brand-accent/70 text-[12px] group-hover:text-brand-accent">subdirectory_arrow_right</span>
                                 {s}
@@ -146,10 +202,8 @@ export const ChatSection: React.FC = () => {
                                     <span className="material-symbols-outlined text-brand-900 text-[10px] font-bold">auto_awesome</span>
                                  </div>
                              )}
-                             <div className={`max-w-[85%] ${msg.role === 'user' ? 'bg-brand-accent text-white rounded-xl rounded-tr-none px-3 py-2 shadow-sm' : 'text-gray-300 px-3 py-2 text-sm'}`}>
-                                 {msg.text.split('\n').map((line, i) => (
-                                    <p key={i} className={`leading-relaxed ${i > 0 ? 'mt-1' : ''}`}>{line}</p>
-                                 ))}
+                             <div className={`max-w-[85%] ${msg.role === 'user' ? 'bg-brand-accent text-white rounded-xl rounded-tr-none px-3 py-1.5 shadow-sm' : 'text-gray-300 px-3 py-1.5'}`}>
+                                 <ChatRichText text={msg.text} />
                              </div>
                         </div>
                     ))}
@@ -170,8 +224,8 @@ export const ChatSection: React.FC = () => {
         </div>
 
         {/* Input Bar */}
-        <div className="px-4 pb-4 pt-1 bg-transparent relative z-10 w-full flex justify-center">
-            <div className="w-full max-w-3xl relative bg-[#1e2330] rounded-2xl border border-brand-700/50 shadow-lg focus-within:border-brand-600 focus-within:ring-1 focus-within:ring-brand-600/30 transition-all p-2">
+        <div className="w-full flex justify-center pb-2 bg-transparent relative z-10 px-4">
+            <div className="w-full max-w-4xl relative bg-[#1e2330] rounded-2xl border border-brand-700/50 shadow-lg focus-within:border-brand-600 focus-within:ring-1 focus-within:ring-brand-600/30 transition-all p-3 flex flex-col">
                  <textarea
                     ref={textareaRef}
                     value={input}
@@ -183,11 +237,11 @@ export const ChatSection: React.FC = () => {
                         }
                     }}
                     placeholder="How can Strong Mind help?"
-                    className="w-full bg-transparent border-none text-white text-sm placeholder-gray-500 px-2 py-1 focus:ring-0 resize-none max-h-[150px] scrollbar-hide"
+                    className="w-full bg-transparent border-none text-white text-sm placeholder-gray-500 px-2 py-3 focus:ring-0 resize-none max-h-[150px] scrollbar-hide mb-2"
                     rows={1}
                  />
                  
-                 <div className="flex justify-between items-center px-1 pb-1 pt-2">
+                 <div className="flex justify-between items-center px-1 pt-1">
                     {/* Model Selector / Tools */}
                     <div className="flex items-center gap-1">
                          <button className="p-1.5 text-gray-500 hover:text-white hover:bg-white/10 rounded-full transition-colors">
@@ -217,13 +271,11 @@ export const ChatSection: React.FC = () => {
                         <span className="material-symbols-outlined text-base">arrow_upward</span>
                     </button>
                  </div>
+                 <div className="text-center text-[9px] text-gray-700 font-medium pt-1 w-full pointer-events-none select-none">
+                     Powered by Gemini 2.5 Flash & Lite. AI can make mistakes.
+                 </div>
             </div>
         </div>
-        
-        {/* Footer Text */}
-         <p className="text-center text-[9px] text-gray-700 pb-2 font-medium absolute bottom-1 w-full pointer-events-none">
-             Powered by Gemini 2.5 Flash & Lite. AI can make mistakes.
-         </p>
 
       </div>
       <style>{`

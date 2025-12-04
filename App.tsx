@@ -443,7 +443,7 @@ const App: React.FC = () => {
       </nav>
 
       {/* Main Area */}
-      <main className={`mx-auto ${view === AppView.CHAT ? 'w-full h-[calc(100vh-80px)]' : 'container px-4 py-8'}`}>
+      <main className={view === AppView.CHAT ? 'w-full h-[calc(100vh-80px)]' : 'container mx-auto px-4 py-8'}>
         {renderContent()}
       </main>
 

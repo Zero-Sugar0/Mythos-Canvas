@@ -86,6 +86,34 @@ export const generateStoryStream = async (
 };
 
 /**
+ * Generates an image from text using gemini-2.5-flash-image (Nano Banana).
+ */
+export const generateImage = async (prompt: string): Promise<string> => {
+  try {
+    // According to guidelines, use generateContent for Nano Banana models
+    const response: GenerateContentResponse = await ai.models.generateContent({
+      model: "gemini-2.5-flash-image",
+      contents: {
+        parts: [{ text: prompt }]
+      }
+    });
+
+    // Iterate to find the image part in the response
+    if (response.candidates && response.candidates[0].content.parts) {
+      for (const part of response.candidates[0].content.parts) {
+        if (part.inlineData) {
+          return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+        }
+      }
+    }
+    throw new Error("No image generated.");
+  } catch (error) {
+    console.error("Image generation failed:", error);
+    throw error;
+  }
+};
+
+/**
  * Edits an image based on a text prompt using gemini-2.5-flash-image (Nano Banana).
  */
 export const editImage = async (imageFile: File, prompt: string): Promise<string> => {
@@ -114,7 +142,7 @@ export const editImage = async (imageFile: File, prompt: string): Promise<string
     if (response.candidates && response.candidates[0].content.parts) {
       for (const part of response.candidates[0].content.parts) {
         if (part.inlineData) {
-          return `data:image/png;base64,${part.inlineData.data}`;
+          return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
         }
       }
     }
