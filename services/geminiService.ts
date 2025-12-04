@@ -126,34 +126,56 @@ export const editImage = async (imageFile: File, prompt: string): Promise<string
 };
 
 /**
- * Chatbot functionality using gemini-3-pro-preview.
+ * Chatbot functionality.
+ * Default model is Pro, but allows switching to Flash-Lite for speed.
  */
-export const sendChatMessage = async (history: {role: string, parts: {text: string}[]}[], newMessage: string): Promise<string> => {
+export const sendChatMessage = async (
+    history: {role: string, parts: {text: string}[]}[], 
+    newMessage: string,
+    model: string = "gemini-3-pro-preview"
+): Promise<string> => {
   try {
     const chat = ai.chats.create({
-      model: "gemini-3-pro-preview",
+      model: model,
       history: history,
     });
     
     const response = await chat.sendMessage({ message: newMessage });
     return response.text || "";
   } catch (error) {
-    console.error("Chat failed:", error);
-    return "I'm having trouble connecting right now.";
+    console.error(`Chat failed with model ${model}:`, error);
+    
+    // Fallback strategy if the requested model fails (e.g., 404 Not Found)
+    if (model !== "gemini-2.5-flash") {
+        console.log("Attempting fallback to gemini-2.5-flash...");
+        try {
+            const fallbackChat = ai.chats.create({
+                model: "gemini-2.5-flash",
+                history: history,
+            });
+            const fallbackResponse = await fallbackChat.sendMessage({ message: newMessage });
+            return fallbackResponse.text || "";
+        } catch (fallbackError) {
+            console.error("Fallback chat failed:", fallbackError);
+        }
+    }
+    
+    return "I'm having trouble connecting to the AI models right now. Please try again.";
   }
 };
 
 /**
- * Helper to get quick responses using flash-lite
+ * Helper to get quick responses using flash
  */
 export const quickAnalyze = async (text: string): Promise<string> => {
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash-lite-latest",
+            model: "gemini-2.5-flash",
             contents: `Briefly analyze this concept for a story: ${text}`
         });
         return response.text || "";
     } catch (e) {
+        console.error("Quick analyze failed:", e);
         return "";
     }
 }

@@ -82,6 +82,7 @@ export const StoryView: React.FC<Props> = ({ content, onReset, isStreaming }) =>
   const [currentPage, setCurrentPage] = useState(0);
   const [isFlipping, setIsFlipping] = useState(false);
   const [flipDirection, setFlipDirection] = useState<'next' | 'prev'>('next');
+  const [storyTitle, setStoryTitle] = useState('Untitled Story');
   
   // Advanced Pagination Logic with Chapter Title Tracking
   useEffect(() => {
@@ -94,7 +95,9 @@ export const StoryView: React.FC<Props> = ({ content, onReset, isStreaming }) =>
     
     // Scan for main title
     const mainTitleMatch = content.match(/^# (.+)$/m);
-    let storyTitle = mainTitleMatch ? mainTitleMatch[1] : 'Untitled Story';
+    if (mainTitleMatch) {
+        setStoryTitle(mainTitleMatch[1]);
+    }
 
     lines.forEach((line) => {
         // Update Chapter Title context when we hit a header
@@ -114,7 +117,6 @@ export const StoryView: React.FC<Props> = ({ content, onReset, isStreaming }) =>
                  currentChunk = '';
                  currentLength = 0;
             }
-            storyTitle = line.replace('# ', '').trim();
         }
 
         const lineLen = line.length;
@@ -138,11 +140,6 @@ export const StoryView: React.FC<Props> = ({ content, onReset, isStreaming }) =>
     
     if (newPages.length === 0) newPages.push({ content: '', chapterTitle: '', pageNumber: 1 });
     setPages(newPages);
-    
-    // Auto-advance if streaming and near end
-    if (isStreaming && currentPage === pages.length - 2) {
-        // Optional: Auto flip? Might be annoying. Let's just keep pages updated.
-    }
   }, [content]);
 
   const turnPage = (dir: 'next' | 'prev') => {
@@ -165,11 +162,109 @@ export const StoryView: React.FC<Props> = ({ content, onReset, isStreaming }) =>
     }
   };
 
-  const downloadStory = () => {
+  const downloadMarkdown = () => {
     const element = document.createElement("a");
     const file = new Blob([content], {type: 'text/markdown'});
     element.href = URL.createObjectURL(file);
-    element.download = "mythos_story.md";
+    element.download = `${storyTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.md`;
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+  };
+
+  const downloadBookHTML = () => {
+    const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${storyTitle}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Merriweather:ital,wght@0,300;0,400;0,700;1,400&display=swap" rel="stylesheet">
+  <style>
+    body { background-color: #0f172a; color: #1e293b; font-family: 'Merriweather', serif; padding: 40px; }
+    .page-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 40px;
+    }
+    .page {
+        background-color: #f4ecd8;
+        width: 100%;
+        max-width: 800px;
+        padding: 80px;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
+        border-radius: 4px;
+        position: relative;
+    }
+    .page::before {
+        content: '';
+        position: absolute;
+        left: 0; top: 0; bottom: 0; width: 6px;
+        background: linear-gradient(to right, rgba(0,0,0,0.1), transparent);
+    }
+    .page-number { text-align: center; font-size: 14px; color: #94a3b8; margin-top: 60px; font-family: 'Inter', sans-serif; letter-spacing: 0.1em; }
+    .chapter-title { 
+        position: absolute; 
+        top: 30px; 
+        left: 0; 
+        right: 0; 
+        text-align: center; 
+        text-transform: uppercase; 
+        font-size: 10px; 
+        letter-spacing: 0.2em; 
+        color: #94a3b8; 
+        font-family: 'Inter', sans-serif;
+    }
+    @media print {
+        body { background-color: white; padding: 0; }
+        .page { box-shadow: none; margin: 0; page-break-after: always; max-width: 100%; border-radius: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-container">
+    ${pages.map(page => {
+        // Simple MD parser for export
+        const parsedContent = page.content.split(/\n\s*\n/).map(block => {
+            const t = block.trim();
+            if (!t) return '';
+            if (t.startsWith('# ')) return `<h1 class="text-4xl font-bold font-serif text-slate-900 mb-8 mt-4 text-center leading-tight">${t.replace('# ', '')}</h1>`;
+            if (t.startsWith('## ')) return `<h2 class="text-2xl font-bold font-serif text-slate-800 mb-6 mt-8 border-b-2 border-amber-200 pb-2">${t.replace('## ', '')}</h2>`;
+            if (t.startsWith('### ')) return `<h3 class="text-xl font-semibold font-serif text-slate-700 mb-4 mt-6 italic">${t.replace('### ', '')}</h3>`;
+            if (t.startsWith('> ')) return `<blockquote class="border-l-4 border-amber-400 pl-6 italic text-gray-700 my-6 bg-yellow-50/50 p-4 rounded-r-lg text-lg font-light leading-relaxed">${t.replace(/> /g, '')}</blockquote>`;
+            if (t === '---') return `<div class="flex justify-center my-8"><span class="text-amber-400/60 text-2xl tracking-[0.5em]">❖ ❖ ❖</span></div>`;
+            
+            // Inline parsing
+            let processed = t
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>');
+            
+            if (t.startsWith('- ')) {
+                 const items = t.split('\n');
+                 return `<ul class="space-y-2 mb-4 ml-4">${items.map(i => `<li class="list-disc ml-4 text-gray-800 leading-relaxed pl-2 marker:text-amber-500">${i.replace('- ', '')}</li>`).join('')}</ul>`;
+            }
+
+            return `<p class="text-gray-800 leading-relaxed text-lg text-justify indent-8 mb-4">${processed}</p>`;
+        }).join('');
+
+        return `
+        <div class="page">
+            <div class="chapter-title">${page.chapterTitle}</div>
+            <div class="content">${parsedContent}</div>
+            <div class="page-number">~ ${page.pageNumber} ~</div>
+        </div>`;
+    }).join('')}
+  </div>
+</body>
+</html>`;
+
+    const element = document.createElement("a");
+    const file = new Blob([htmlContent], {type: 'text/html'});
+    element.href = URL.createObjectURL(file);
+    element.download = `${storyTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_book.html`;
     document.body.appendChild(element);
     element.click();
     document.body.removeChild(element);
@@ -208,10 +303,20 @@ export const StoryView: React.FC<Props> = ({ content, onReset, isStreaming }) =>
   );
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen pb-10 overflow-hidden bg-brand-900">
+    <div className="flex flex-col items-center justify-center min-h-screen pb-10 overflow-hidden bg-brand-900 print:bg-white print:h-auto print:overflow-visible">
         
-        {/* Controls Header */}
-        <div className="w-full max-w-6xl flex justify-between items-center mb-6 px-4 animate-fade-in-down z-20">
+        {/* CSS for printing */}
+        <style>{`
+            @media print {
+                .no-print { display: none !important; }
+                .print-only { display: block !important; }
+                body { background-color: white !important; }
+                @page { margin: 20mm; size: auto; }
+            }
+        `}</style>
+
+        {/* Controls Header (Hidden on Print) */}
+        <div className="w-full max-w-6xl flex justify-between items-center mb-6 px-4 animate-fade-in-down z-20 no-print">
             <button 
                 onClick={onReset}
                 className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors text-xs uppercase tracking-widest font-bold bg-brand-800/50 px-4 py-2 rounded-full backdrop-blur-sm hover:bg-brand-700"
@@ -231,23 +336,31 @@ export const StoryView: React.FC<Props> = ({ content, onReset, isStreaming }) =>
             </div>
             <div className="flex gap-2">
                 <button 
-                    onClick={downloadStory}
+                    onClick={downloadMarkdown}
                     className="text-gray-400 hover:text-brand-accent transition-colors text-xs flex items-center gap-2 uppercase tracking-widest font-bold bg-brand-800/50 px-4 py-2 rounded-full backdrop-blur-sm hover:bg-brand-700"
-                    title="Download as Markdown"
+                    title="Download Source Text"
                 >
-                    <span className="material-symbols-outlined text-sm">download</span> <span className="hidden sm:inline">Export MD</span>
+                    <span className="material-symbols-outlined text-sm">description</span> <span className="hidden sm:inline">Markdown</span>
+                </button>
+                <button 
+                    onClick={downloadBookHTML}
+                    className="text-gray-400 hover:text-brand-gold transition-colors text-xs flex items-center gap-2 uppercase tracking-widest font-bold bg-brand-800/50 px-4 py-2 rounded-full backdrop-blur-sm hover:bg-brand-700"
+                    title="Download Designed Book File"
+                >
+                    <span className="material-symbols-outlined text-sm">book</span> <span className="hidden sm:inline">Export Book</span>
                 </button>
                 <button 
                     onClick={() => window.print()}
                     className="text-gray-400 hover:text-white transition-colors text-xs flex items-center gap-2 uppercase tracking-widest font-bold bg-brand-800/50 px-4 py-2 rounded-full backdrop-blur-sm hover:bg-brand-700"
+                    title="Print to PDF"
                 >
-                    <span className="material-symbols-outlined text-sm">print</span> <span className="hidden sm:inline">Print</span>
+                    <span className="material-symbols-outlined text-sm">print</span> <span className="hidden sm:inline">Print / PDF</span>
                 </button>
             </div>
         </div>
 
-        {/* 3D Book Container */}
-        <div className="relative w-full max-w-[1200px] aspect-[1.6/1] perspective-2000 z-10 hidden md:block">
+        {/* 3D Book Container (Hidden on Print) */}
+        <div className="relative w-full max-w-[1200px] aspect-[1.6/1] perspective-2000 z-10 hidden md:block no-print">
             {/* The Book */}
             <div className="relative w-full h-full transform-style-3d flex justify-center shadow-2xl">
                 
@@ -360,8 +473,8 @@ export const StoryView: React.FC<Props> = ({ content, onReset, isStreaming }) =>
             />
         </div>
 
-        {/* Mobile View */}
-        <div className="md:hidden w-full px-4 max-w-lg">
+        {/* Mobile View (Hidden on Print) */}
+        <div className="md:hidden w-full px-4 max-w-lg no-print">
              <div className="bg-[#f4ecd8] text-gray-900 rounded-lg shadow-xl p-6 min-h-[60vh] relative border-r-4 border-gray-300">
                 <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-b from-black/5 to-transparent"></div>
                 {activePage && <RichTextRenderer text={activePage.content} />}
@@ -385,8 +498,8 @@ export const StoryView: React.FC<Props> = ({ content, onReset, isStreaming }) =>
              </div>
         </div>
 
-        {/* Desktop Controls */}
-        <div className="hidden md:flex items-center gap-8 mt-8 z-20">
+        {/* Desktop Controls (Hidden on Print) */}
+        <div className="hidden md:flex items-center gap-8 mt-8 z-20 no-print">
              <button 
                 onClick={() => turnPage('prev')}
                 disabled={currentPage === 0 || isFlipping}
@@ -409,6 +522,23 @@ export const StoryView: React.FC<Props> = ({ content, onReset, isStreaming }) =>
              </button>
         </div>
         
+        {/* Printable View - Only visible when printing */}
+        <div className="hidden print-only w-full">
+            <div className="flex flex-col gap-8 max-w-[210mm] mx-auto">
+                {pages.map((page, idx) => (
+                    <div key={idx} className="bg-white p-12 relative border-b border-gray-200 pb-16 page-break-after-always">
+                        <div className="text-center text-[10px] text-gray-400 font-serif uppercase tracking-widest mb-8">
+                             {page.chapterTitle}
+                        </div>
+                        <RichTextRenderer text={page.content} />
+                        <div className="text-center text-xs font-serif text-gray-500 tracking-widest mt-12">
+                             ~ {page.pageNumber} ~
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+
         <style>{`
             .perspective-2000 { perspective: 2500px; }
             .transform-style-3d { transform-style: preserve-3d; }
@@ -418,6 +548,7 @@ export const StoryView: React.FC<Props> = ({ content, onReset, isStreaming }) =>
             .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
             .custom-scrollbar::-webkit-scrollbar-thumb { background: #d1cbb8; border-radius: 10px; }
             .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #beb7a1; }
+            .page-break-after-always { page-break-after: always; }
         `}</style>
     </div>
   );
