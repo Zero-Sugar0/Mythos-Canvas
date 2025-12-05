@@ -17,19 +17,19 @@ const ChatRichText: React.FC<{ text: string }> = ({ text }) => {
   };
 
   return (
-    <div className="space-y-2 text-sm">
+    <div className="space-y-2 text-sm leading-relaxed">
       {blocks.map((block, idx) => {
         const trimmed = block.trim();
         if (!trimmed) return null;
 
-        if (trimmed.startsWith('### ')) return <h3 key={idx} className="font-bold text-base mt-2">{trimmed.replace('### ', '')}</h3>;
-        if (trimmed.startsWith('## ')) return <h2 key={idx} className="font-bold text-lg mt-3 border-b border-white/10 pb-1">{trimmed.replace('## ', '')}</h2>;
+        if (trimmed.startsWith('### ')) return <h3 key={idx} className="font-bold text-base mt-2 text-brand-gold">{trimmed.replace('### ', '')}</h3>;
+        if (trimmed.startsWith('## ')) return <h2 key={idx} className="font-bold text-lg mt-3 border-b border-brand-700/50 pb-1 text-white">{trimmed.replace('## ', '')}</h2>;
         
         // Code Block
         if (trimmed.startsWith('```')) {
             const codeContent = trimmed.replace(/^```\w*\n?/, '').replace(/```$/, '');
             return (
-                <div key={idx} className="bg-[#0a0f1c] p-3 rounded-lg border border-brand-700/50 my-2 overflow-x-auto">
+                <div key={idx} className="bg-[#0a0f1c] p-3 rounded-lg border border-brand-700/50 my-2 overflow-x-auto shadow-inner">
                     <pre className="font-mono text-xs text-gray-300"><code>{codeContent}</code></pre>
                 </div>
             );
@@ -39,7 +39,7 @@ const ChatRichText: React.FC<{ text: string }> = ({ text }) => {
         if (trimmed.match(/^- /m) || trimmed.match(/^\d+\. /m)) {
             const items = trimmed.split('\n');
             return (
-                <ul key={idx} className="space-y-1 ml-4 list-disc">
+                <ul key={idx} className="space-y-1 ml-4 list-disc marker:text-brand-gold/70">
                     {items.map((item, i) => (
                         <li key={i} className="pl-1">{parseInline(item.replace(/^- |^\d+\. /, ''))}</li>
                     ))}
@@ -49,10 +49,10 @@ const ChatRichText: React.FC<{ text: string }> = ({ text }) => {
         
         // Blockquote
         if (trimmed.startsWith('> ')) {
-             return <blockquote key={idx} className="border-l-2 border-brand-gold pl-3 italic opacity-80 my-2">{parseInline(trimmed.replace(/> /g, ''))}</blockquote>
+             return <blockquote key={idx} className="border-l-2 border-brand-gold pl-3 italic opacity-80 my-2 bg-brand-900/30 py-1 rounded-r">{parseInline(trimmed.replace(/> /g, ''))}</blockquote>
         }
 
-        return <p key={idx} className="leading-relaxed">{parseInline(trimmed)}</p>;
+        return <p key={idx} className="">{parseInline(trimmed)}</p>;
       })}
     </div>
   );
@@ -156,14 +156,14 @@ export const ChatSection: React.FC = () => {
   const loadSession = (session: ChatSession) => {
       setMessages(session.messages);
       setCurrentSessionId(session.id);
-      if (window.innerWidth < 768) setSidebarOpen(false);
+      setSidebarOpen(false); // Close sidebar on mobile when selecting
   };
 
   const startNewChat = () => {
       setMessages([]);
       setCurrentSessionId(null);
       setAttachment(null);
-      if (window.innerWidth < 768) setSidebarOpen(false);
+      setSidebarOpen(false); // Close sidebar on mobile
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -273,21 +273,26 @@ export const ChatSection: React.FC = () => {
       
       {/* Sidebar Overlay (Mobile) */}
       {sidebarOpen && (
-          <div className="fixed inset-0 bg-black/50 z-20 md:hidden backdrop-blur-sm" onClick={() => setSidebarOpen(false)}></div>
+          <div className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm transition-opacity" onClick={() => setSidebarOpen(false)}></div>
       )}
 
       {/* Sidebar */}
       <div 
-        className={`${sidebarOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full md:w-0 md:-translate-x-full opacity-0 md:opacity-0'} 
-        bg-[#0a0f1c] transition-all duration-300 ease-in-out border-r border-brand-800 flex flex-col z-30 h-full flex-shrink-0 absolute md:relative shadow-2xl md:shadow-none`}
+        className={`
+            fixed inset-y-0 left-0 z-50 flex flex-col
+            bg-[#0a0f1c] border-r border-brand-800 shadow-2xl md:shadow-none
+            transition-all duration-300 ease-in-out
+            md:relative 
+            ${sidebarOpen ? 'translate-x-0 w-72 md:w-64' : '-translate-x-full w-72 md:translate-x-0 md:w-0 md:border-none'}
+        `}
       >
-        <div className="p-3 flex flex-col h-full min-w-64">
+        <div className={`p-3 flex flex-col h-full w-full overflow-hidden transition-opacity duration-200 ${sidebarOpen ? 'opacity-100' : 'md:opacity-0 opacity-100'}`}>
             <button 
                 onClick={startNewChat}
                 className="flex items-center gap-2 w-full bg-brand-800/50 hover:bg-brand-800 text-white p-3 rounded-lg mb-4 transition-colors font-medium border border-brand-700/50 text-sm group active:scale-95 transform duration-150"
             >
                 <span className="material-symbols-outlined text-brand-gold text-xl group-hover:rotate-90 transition-transform">add</span>
-                New Chat
+                <span className="whitespace-nowrap">New Chat</span>
             </button>
 
             <div className="flex-1 overflow-y-auto custom-scrollbar">
@@ -321,7 +326,7 @@ export const ChatSection: React.FC = () => {
                 </div>
             </div>
 
-            <div className="mt-auto pt-3 border-t border-brand-800/50 text-[10px] text-gray-600 text-center">
+            <div className="mt-auto pt-3 border-t border-brand-800/50 text-[10px] text-gray-600 text-center whitespace-nowrap">
                 Strong Mind v1.5
             </div>
         </div>
@@ -330,11 +335,12 @@ export const ChatSection: React.FC = () => {
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col min-w-0 bg-[#0f172a] relative h-full">
         
-        {/* Toggle Sidebar Button - Positioned to not overlap text heavily on mobile */}
+        {/* Toggle Sidebar Button */}
         <div className="absolute top-2 left-2 z-10 md:top-3 md:left-3">
             <button 
                 onClick={() => setSidebarOpen(!sidebarOpen)}
                 className="p-2 md:p-1.5 bg-brand-800/80 hover:bg-brand-700 text-gray-400 hover:text-white rounded-md transition-colors shadow-sm border border-brand-700/30 active:scale-90 transform duration-150 backdrop-blur-sm"
+                aria-label="Toggle Sidebar"
             >
                 <span className="material-symbols-outlined text-xl md:text-lg">
                     {sidebarOpen ? 'chevron_left' : 'menu'}
@@ -343,7 +349,7 @@ export const ChatSection: React.FC = () => {
         </div>
 
         {/* Messages Container */}
-        <div className="flex-1 overflow-y-auto px-2 md:px-4 py-4 pt-14 md:pt-4 scroll-smooth custom-scrollbar" ref={scrollRef}>
+        <div className="flex-1 overflow-y-auto px-3 md:px-4 py-4 pt-14 md:pt-4 scroll-smooth custom-scrollbar" ref={scrollRef}>
             {messages.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center max-w-2xl mx-auto text-center px-4 pb-20">
                      <div className="w-12 h-12 md:w-16 md:h-16 bg-brand-800/50 rounded-2xl flex items-center justify-center mb-4 shadow-lg border border-brand-700/50">
@@ -357,7 +363,7 @@ export const ChatSection: React.FC = () => {
                             <button 
                                 key={i}
                                 onClick={() => handleSend(s)}
-                                className="px-3 py-3 bg-brand-800/30 hover:bg-brand-800 border border-brand-700/30 hover:border-brand-600 rounded-xl text-xs md:text-sm text-gray-400 hover:text-white transition-all flex items-center gap-3 group active:scale-[0.98]"
+                                className="px-3 py-3 bg-brand-800/30 hover:bg-brand-800 border border-brand-700/30 hover:border-brand-600 rounded-xl text-xs md:text-sm text-gray-400 hover:text-white transition-all flex items-center gap-3 group active:scale-[0.98] min-h-[50px]"
                             >
                                 <span className="material-symbols-outlined text-brand-accent/70 text-sm group-hover:text-brand-accent">subdirectory_arrow_right</span>
                                 {s}
@@ -383,7 +389,7 @@ export const ChatSection: React.FC = () => {
                                      </div>
                                  )}
 
-                                 <div className={`${msg.role === 'user' ? 'bg-brand-accent text-white rounded-2xl rounded-tr-none px-4 py-3 shadow-sm text-[15px]' : 'text-gray-300 px-0 py-1 text-[15px]'}`}>
+                                 <div className={`${msg.role === 'user' ? 'bg-brand-accent text-white rounded-2xl rounded-tr-none px-4 py-3 shadow-sm text-[15px]' : 'text-gray-200 px-0 py-1 text-[15px]'} break-words w-full`}>
                                      <ChatRichText text={msg.text} />
                                  </div>
 
@@ -419,7 +425,7 @@ export const ChatSection: React.FC = () => {
         </div>
 
         {/* Input Bar */}
-        <div className="w-full flex justify-center pb-2 md:pb-4 bg-transparent relative z-10 px-2 md:px-4">
+        <div className="w-full flex justify-center pb-safe-bottom pb-2 md:pb-4 bg-transparent relative z-10 px-2 md:px-4">
             <div className="w-full max-w-4xl relative bg-[#1e2330] rounded-3xl border border-brand-700/50 shadow-lg focus-within:border-brand-600 focus-within:ring-1 focus-within:ring-brand-600/30 transition-all p-2 md:p-3 flex flex-col">
                  {/* Attachment Preview */}
                  {attachment && (
@@ -470,7 +476,7 @@ export const ChatSection: React.FC = () => {
                          <button 
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
-                            className="p-2 text-gray-500 hover:text-white hover:bg-white/10 rounded-full transition-colors relative active:scale-90 transform"
+                            className="p-2 text-gray-500 hover:text-white hover:bg-white/10 rounded-full transition-colors relative active:scale-90 transform min-w-[40px] flex items-center justify-center"
                             title="Upload Image"
                          >
                              <span className="material-symbols-outlined text-2xl">add_photo_alternate</span>
@@ -494,6 +500,7 @@ export const ChatSection: React.FC = () => {
 
                     {/* Send Button */}
                     <button 
+                        type="button"
                         onClick={() => handleSend()}
                         disabled={(!input.trim() && !attachment) || isLoading}
                         className={`w-10 h-10 md:w-10 md:h-10 rounded-full flex items-center justify-center transition-all active:scale-90 transform shadow-md ${(input.trim() || attachment) ? 'bg-white text-black hover:bg-gray-200' : 'bg-brand-700 text-gray-600 cursor-not-allowed'}`}
@@ -511,6 +518,7 @@ export const ChatSection: React.FC = () => {
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        .pb-safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
       `}</style>
     </div>
   );
