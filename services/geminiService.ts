@@ -1,4 +1,4 @@
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
+import { GoogleGenAI, GenerateContentResponse, FunctionDeclaration, Type } from "@google/genai";
 import { StoryConfig } from "../types";
 
 // Initialize the client. API_KEY is injected by the environment.
@@ -88,13 +88,18 @@ export const generateStoryStream = async (
 /**
  * Generates an image from text using gemini-2.5-flash-image (Nano Banana).
  */
-export const generateImage = async (prompt: string): Promise<string> => {
+export const generateImage = async (prompt: string, aspectRatio: string = "1:1"): Promise<string> => {
   try {
     // According to guidelines, use generateContent for Nano Banana models
     const response: GenerateContentResponse = await ai.models.generateContent({
       model: "gemini-2.5-flash-image",
       contents: {
         parts: [{ text: prompt }]
+      },
+      config: {
+          imageConfig: {
+              aspectRatio: aspectRatio
+          }
       }
     });
 
@@ -114,9 +119,29 @@ export const generateImage = async (prompt: string): Promise<string> => {
 };
 
 /**
+ * Generates multiple image variations in parallel.
+ */
+export const generateImageVariations = async (prompt: string, aspectRatio: string = "1:1", count: number = 4): Promise<string[]> => {
+  const promises = Array.from({ length: count }, () => generateImage(prompt, aspectRatio));
+  
+  const results = await Promise.allSettled(promises);
+  
+  const successful = results
+    .filter(r => r.status === 'fulfilled')
+    .map(r => (r as PromiseFulfilledResult<string>).value);
+    
+  if (successful.length === 0) {
+    const firstError = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
+    throw firstError?.reason || new Error("Failed to generate variations");
+  }
+  
+  return successful;
+};
+
+/**
  * Edits an image based on a text prompt using gemini-2.5-flash-image (Nano Banana).
  */
-export const editImage = async (imageFile: File, prompt: string): Promise<string> => {
+export const editImage = async (imageFile: File, prompt: string, aspectRatio: string = "1:1"): Promise<string> => {
   // Convert File to Base64
   const base64Data = await fileToGenerativePart(imageFile);
 
@@ -136,6 +161,11 @@ export const editImage = async (imageFile: File, prompt: string): Promise<string
           },
         ],
       },
+      config: {
+        imageConfig: {
+            aspectRatio: aspectRatio
+        }
+      }
     });
     
     // Iterate to find the image part
@@ -154,26 +184,125 @@ export const editImage = async (imageFile: File, prompt: string): Promise<string
 };
 
 /**
- * Chatbot functionality.
- * Default model is 2.5 Flash, but allows switching to Flash-Lite for speed.
+ * Edits multiple image variations in parallel.
+ */
+export const editImageVariations = async (imageFile: File, prompt: string, aspectRatio: string = "1:1", count: number = 4): Promise<string[]> => {
+  const promises = Array.from({ length: count }, () => editImage(imageFile, prompt, aspectRatio));
+  
+  const results = await Promise.allSettled(promises);
+  
+  const successful = results
+   .filter(r => r.status === 'fulfilled')
+   .map(r => (r as PromiseFulfilledResult<string>).value);
+
+  if (successful.length === 0) {
+   const firstError = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
+   throw firstError?.reason || new Error("Failed to generate variations");
+ }
+ return successful;
+}
+
+/**
+ * Tool definition for generating images within the chat
+ */
+const generateImageTool: FunctionDeclaration = {
+  name: "generate_image",
+  description: "Generates an image based on a detailed text prompt. Call this function when the user asks to draw, create, or visualize something.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      prompt: {
+        type: Type.STRING,
+        description: "The detailed visual description of the image to generate."
+      },
+      aspectRatio: {
+        type: Type.STRING,
+        description: "The aspect ratio of the image. Options: '1:1', '16:9', '9:16', '4:3', '3:4'. Defaults to '1:1'."
+      }
+    },
+    required: ["prompt"]
+  }
+};
+
+/**
+ * Chatbot functionality with Multimodal and Tool Support.
  */
 export const sendChatMessage = async (
-    history: {role: string, parts: {text: string}[]}[], 
+    history: {role: string, parts: {text?: string, inlineData?: {mimeType: string, data: string}}[]}[], 
     newMessage: string,
-    model: string = "gemini-2.5-flash"
-): Promise<string> => {
+    model: string = "gemini-2.5-flash",
+    attachmentBase64?: string
+): Promise<{ text: string, generatedImage?: string }> => {
+  
+  // If user provides an image, we MUST use gemini-3-pro-preview for analysis as per requirements.
+  const effectiveModel = attachmentBase64 ? "gemini-3-pro-preview" : model;
+  
+  // Construct the current message contents
+  const currentParts: any[] = [{ text: newMessage }];
+  if (attachmentBase64) {
+      currentParts.push({
+          inlineData: {
+              mimeType: "image/jpeg", // Assuming JPEG for simplicity, or detect from data URI
+              data: attachmentBase64.split(',')[1] || attachmentBase64
+          }
+      });
+  }
+
   try {
-    const chat = ai.chats.create({
-      model: model,
-      history: history,
+    // We cannot use ai.chats.create easily with tool execution loops in a stateless wrapper.
+    // So we will use generateContent to handle the single turn with full history context.
+    // However, keeping the session alive is better. 
+    // Let's stick to the stateless approach for this helper, but reconstruct history carefully.
+    
+    const contents = [
+        ...history,
+        { role: 'user', parts: currentParts }
+    ];
+
+    const result = await ai.models.generateContent({
+      model: effectiveModel,
+      contents: contents,
+      config: {
+        tools: [{ functionDeclarations: [generateImageTool] }]
+      }
     });
+
+    const response = result.candidates?.[0]?.content;
+    const parts = response?.parts || [];
     
-    const response = await chat.sendMessage({ message: newMessage });
-    return response.text || "";
+    let finalText = "";
+    let generatedImageBase64: string | undefined = undefined;
+
+    // Handle Model Response Parts
+    for (const part of parts) {
+        if (part.text) {
+            finalText += part.text;
+        }
+        
+        // Check for Function Calls
+        if (part.functionCall) {
+            const fc = part.functionCall;
+            if (fc.name === 'generate_image') {
+                const args = fc.args as any;
+                finalText += `\n\n_(Generating image: ${args.prompt})_\n`;
+                
+                try {
+                    generatedImageBase64 = await generateImage(args.prompt, args.aspectRatio || "1:1");
+                } catch (e) {
+                    finalText += `\n_(Image generation failed: ${e})_`;
+                }
+            }
+        }
+    }
+
+    return {
+        text: finalText,
+        generatedImage: generatedImageBase64
+    };
+
   } catch (error) {
-    console.error(`Chat failed with model ${model}:`, error);
-    
-    return "I'm having trouble connecting to the AI models right now. Please try again.";
+    console.error(`Chat failed with model ${effectiveModel}:`, error);
+    return { text: "I'm having trouble connecting to the AI models right now. Please try again." };
   }
 };
 

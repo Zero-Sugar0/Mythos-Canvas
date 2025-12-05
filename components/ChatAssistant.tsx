@@ -64,11 +64,13 @@ export const ChatSection: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   
   const [input, setInput] = useState('');
+  const [attachment, setAttachment] = useState<string | null>(null); // Base64 of image
   const [isLoading, setIsLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [isFastMode, setIsFastMode] = useState(false); // Default to Smart (Flash)
+  const [isFastMode, setIsFastMode] = useState(false); 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load history on mount
   useEffect(() => {
@@ -87,7 +89,7 @@ export const ChatSection: React.FC = () => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, isLoading]);
+  }, [messages, isLoading, attachment]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -107,7 +109,7 @@ export const ChatSection: React.FC = () => {
       const id = Date.now().toString();
       const title = firstMessage.text.length > 30 
         ? firstMessage.text.substring(0, 30) + '...' 
-        : firstMessage.text;
+        : (firstMessage.attachment ? 'Image Analysis' : firstMessage.text);
       
       const newSession: ChatSession = {
           id,
@@ -160,50 +162,82 @@ export const ChatSection: React.FC = () => {
   const startNewChat = () => {
       setMessages([]);
       setCurrentSessionId(null);
+      setAttachment(null);
       if (window.innerWidth < 768) setSidebarOpen(false);
+  };
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+      if (event.target.files && event.target.files[0]) {
+          const file = event.target.files[0];
+          const reader = new FileReader();
+          reader.onload = (e) => {
+              const result = e.target?.result as string;
+              setAttachment(result);
+          };
+          reader.readAsDataURL(file);
+      }
   };
 
   const handleSend = async (textOverride?: string) => {
     const textToSend = textOverride || input;
-    if (!textToSend.trim() || isLoading) return;
+    if ((!textToSend.trim() && !attachment) || isLoading) return;
 
-    const userMsg: ChatMessage = { role: 'user', text: textToSend, timestamp: Date.now() };
+    const userMsg: ChatMessage = { 
+        role: 'user', 
+        text: textToSend, 
+        timestamp: Date.now(),
+        attachment: attachment || undefined
+    };
+    
     const newMessages = [...messages, userMsg];
     
     setMessages(newMessages);
     setInput('');
+    setAttachment(null);
     setIsLoading(true);
 
     let activeId = currentSessionId;
 
-    // Handle Session Creation/Update immediately so user doesn't lose data
+    // Handle Session Creation/Update immediately
     if (!activeId) {
         activeId = createNewSession(userMsg);
     } else {
         updateSessionInStorage(activeId, newMessages);
     }
 
-    // Format history for the SDK (using previous messages)
-    const history = messages.map(m => ({
-      role: m.role,
-      parts: [{ text: m.text }]
-    }));
+    // Prepare history for the service
+    const history = messages.map(m => {
+        const parts: any[] = [{ text: m.text }];
+        if (m.attachment) {
+            parts.push({
+                inlineData: {
+                    mimeType: "image/jpeg",
+                    data: m.attachment.split(',')[1]
+                }
+            });
+        }
+        return {
+            role: m.role,
+            parts: parts
+        };
+    });
 
-    // Choose model based on toggle
+    // Choose model
     const model = isFastMode ? 'gemini-flash-lite-latest' : 'gemini-2.5-flash';
     
-    const responseText = await sendChatMessage(history, userMsg.text, model);
+    // Call Service
+    const response = await sendChatMessage(history, userMsg.text, model, userMsg.attachment);
     
     const modelMsg: ChatMessage = {
       role: 'model',
-      text: responseText,
-      timestamp: Date.now()
+      text: response.text,
+      timestamp: Date.now(),
+      generatedImage: response.generatedImage
     };
     
     const finalMessages = [...newMessages, modelMsg];
     setMessages(finalMessages);
     
-    // Update storage with final response
     if (activeId) {
         updateSessionInStorage(activeId, finalMessages);
     }
@@ -219,12 +253,17 @@ export const ChatSection: React.FC = () => {
   ];
 
   return (
-    <div className="flex h-full w-full bg-[#0f172a] overflow-hidden">
+    <div className="flex h-full w-full bg-[#0f172a] overflow-hidden relative">
       
+      {/* Sidebar Overlay (Mobile) */}
+      {sidebarOpen && (
+          <div className="fixed inset-0 bg-black/50 z-20 md:hidden" onClick={() => setSidebarOpen(false)}></div>
+      )}
+
       {/* Sidebar */}
       <div 
-        className={`${sidebarOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full opacity-0'} 
-        bg-[#0a0f1c] transition-all duration-300 ease-in-out border-r border-brand-800 flex flex-col z-20 h-full flex-shrink-0`}
+        className={`${sidebarOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full md:w-0 md:-translate-x-full opacity-0 md:opacity-0'} 
+        bg-[#0a0f1c] transition-all duration-300 ease-in-out border-r border-brand-800 flex flex-col z-30 h-full flex-shrink-0 absolute md:relative shadow-2xl md:shadow-none`}
       >
         <div className="p-3 flex flex-col h-full min-w-64">
             <button 
@@ -267,7 +306,7 @@ export const ChatSection: React.FC = () => {
             </div>
 
             <div className="mt-auto pt-3 border-t border-brand-800/50 text-[10px] text-gray-600 text-center">
-                Strong Mind v1.3
+                Strong Mind v1.4
             </div>
         </div>
       </div>
@@ -276,10 +315,10 @@ export const ChatSection: React.FC = () => {
       <div className="flex-1 flex flex-col min-w-0 bg-[#0f172a] relative h-full">
         
         {/* Toggle Sidebar Button */}
-        <div className="absolute top-3 left-3 z-20">
+        <div className="absolute top-3 left-3 z-10">
             <button 
                 onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="p-1.5 bg-brand-800/50 hover:bg-brand-700 text-gray-500 hover:text-white rounded-md transition-colors"
+                className="p-1.5 bg-brand-800/50 hover:bg-brand-700 text-gray-500 hover:text-white rounded-md transition-colors shadow-sm border border-brand-700/30"
             >
                 <span className="material-symbols-outlined text-lg">
                     {sidebarOpen ? 'chevron_left' : 'menu'}
@@ -288,21 +327,21 @@ export const ChatSection: React.FC = () => {
         </div>
 
         {/* Messages Container */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 scroll-smooth custom-scrollbar" ref={scrollRef}>
+        <div className="flex-1 overflow-y-auto px-2 md:px-4 py-4 scroll-smooth custom-scrollbar" ref={scrollRef}>
             {messages.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center max-w-2xl mx-auto text-center px-4 pb-20">
                      <div className="w-10 h-10 bg-brand-800/50 rounded-xl flex items-center justify-center mb-4 shadow-lg border border-brand-700/50">
                         <span className="material-symbols-outlined text-2xl text-brand-gold">auto_awesome</span>
                      </div>
                      <h2 className="text-xl font-serif text-white mb-2">Hey! What's up?</h2>
-                     <p className="text-xs text-gray-500 mb-6">Ready to craft another epic story or tweak code?</p>
+                     <p className="text-xs text-gray-500 mb-6">Ready to craft another epic story, brainstorm, or analyze images?</p>
                      
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 w-full text-left max-w-lg">
                         {suggestions.map((s, i) => (
                             <button 
                                 key={i}
                                 onClick={() => handleSend(s)}
-                                className="px-2 py-1.5 bg-brand-800/30 hover:bg-brand-800 border border-brand-700/30 hover:border-brand-600 rounded-lg text-[10px] text-gray-400 hover:text-white transition-all flex items-center gap-2 group"
+                                className="px-2 py-2 bg-brand-800/30 hover:bg-brand-800 border border-brand-700/30 hover:border-brand-600 rounded-lg text-[11px] text-gray-400 hover:text-white transition-all flex items-center gap-2 group"
                             >
                                 <span className="material-symbols-outlined text-brand-accent/70 text-[12px] group-hover:text-brand-accent">subdirectory_arrow_right</span>
                                 {s}
@@ -311,22 +350,45 @@ export const ChatSection: React.FC = () => {
                      </div>
                 </div>
             ) : (
-                <div className="flex flex-col gap-3 max-w-3xl mx-auto pt-2 pb-2">
+                <div className="flex flex-col gap-4 md:gap-6 max-w-3xl mx-auto pt-8 pb-2">
                     {messages.map((msg, idx) => (
-                        <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div key={idx} className={`flex gap-2 md:gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                              {msg.role === 'model' && (
-                                 <div className="w-6 h-6 rounded-full bg-brand-gold flex items-center justify-center flex-shrink-0 mt-0.5">
+                                 <div className="w-6 h-6 rounded-full bg-brand-gold flex items-center justify-center flex-shrink-0 mt-0.5 shadow-md">
                                     <span className="material-symbols-outlined text-brand-900 text-[10px] font-bold">auto_awesome</span>
                                  </div>
                              )}
-                             <div className={`max-w-[85%] ${msg.role === 'user' ? 'bg-brand-accent text-white rounded-xl rounded-tr-none px-3 py-1.5 shadow-sm' : 'text-gray-300 px-3 py-1.5'}`}>
-                                 <ChatRichText text={msg.text} />
+                             
+                             <div className={`max-w-[85%] md:max-w-[85%] flex flex-col gap-2 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                                 {/* User Attachment Display */}
+                                 {msg.attachment && (
+                                     <div className="rounded-lg overflow-hidden border border-brand-700/50 shadow-md max-w-[150px] md:max-w-[200px]">
+                                         <img src={msg.attachment} alt="User Upload" className="w-full h-auto object-cover" />
+                                     </div>
+                                 )}
+
+                                 <div className={`${msg.role === 'user' ? 'bg-brand-accent text-white rounded-xl rounded-tr-none px-3 py-2 md:px-4 md:py-2 shadow-sm' : 'text-gray-300 px-0 py-1'}`}>
+                                     <ChatRichText text={msg.text} />
+                                 </div>
+
+                                 {/* Generated Image Display */}
+                                 {msg.generatedImage && (
+                                     <div className="mt-2 rounded-xl overflow-hidden border border-brand-700 shadow-xl max-w-full md:max-w-md bg-black/50">
+                                         <img src={msg.generatedImage} alt="Generated Content" className="w-full h-auto" />
+                                         <div className="px-3 py-2 bg-brand-900/80 flex justify-between items-center">
+                                             <span className="text-[10px] text-brand-gold font-bold uppercase tracking-wider">AI Generated</span>
+                                             <a href={msg.generatedImage} download={`generated_${Date.now()}.png`} className="text-gray-400 hover:text-white">
+                                                 <span className="material-symbols-outlined text-sm">download</span>
+                                             </a>
+                                         </div>
+                                     </div>
+                                 )}
                              </div>
                         </div>
                     ))}
                     {isLoading && (
                         <div className="flex gap-3 max-w-3xl justify-start">
-                             <div className="w-6 h-6 rounded-full bg-brand-gold flex items-center justify-center flex-shrink-0 mt-0.5">
+                             <div className="w-6 h-6 rounded-full bg-brand-gold flex items-center justify-center flex-shrink-0 mt-0.5 animate-pulse">
                                 <span className="material-symbols-outlined text-brand-900 text-[10px] font-bold">auto_awesome</span>
                              </div>
                              <div className="flex items-center gap-1 px-1 py-2">
@@ -341,8 +403,27 @@ export const ChatSection: React.FC = () => {
         </div>
 
         {/* Input Bar */}
-        <div className="w-full flex justify-center pb-2 bg-transparent relative z-10 px-4">
-            <div className="w-full max-w-4xl relative bg-[#1e2330] rounded-2xl border border-brand-700/50 shadow-lg focus-within:border-brand-600 focus-within:ring-1 focus-within:ring-brand-600/30 transition-all p-3 flex flex-col">
+        <div className="w-full flex justify-center pb-2 md:pb-4 bg-transparent relative z-10 px-2 md:px-4">
+            <div className="w-full max-w-4xl relative bg-[#1e2330] rounded-2xl border border-brand-700/50 shadow-lg focus-within:border-brand-600 focus-within:ring-1 focus-within:ring-brand-600/30 transition-all p-2 md:p-3 flex flex-col">
+                 {/* Attachment Preview */}
+                 {attachment && (
+                     <div className="flex items-start gap-2 mb-2 p-2 bg-brand-900/50 rounded-lg border border-brand-700/30 w-fit animate-fade-in">
+                         <div className="w-10 h-10 rounded overflow-hidden bg-black/20">
+                             <img src={attachment} alt="Preview" className="w-full h-full object-cover" />
+                         </div>
+                         <div className="flex flex-col justify-center h-10">
+                             <span className="text-[10px] text-brand-gold font-bold uppercase">Image Attached</span>
+                             <span className="text-[9px] text-gray-500">Gemini 3 Pro</span>
+                         </div>
+                         <button 
+                            onClick={() => setAttachment(null)}
+                            className="ml-2 p-1 hover:bg-white/10 rounded-full text-gray-500 hover:text-red-400 transition-colors"
+                         >
+                             <span className="material-symbols-outlined text-sm">close</span>
+                         </button>
+                     </div>
+                 )}
+
                  <textarea
                     ref={textareaRef}
                     value={input}
@@ -353,28 +434,39 @@ export const ChatSection: React.FC = () => {
                             handleSend();
                         }
                     }}
-                    placeholder="How can Strong Mind help?"
-                    className="w-full bg-transparent border-none text-white text-sm placeholder-gray-500 px-2 py-3 focus:ring-0 resize-none max-h-[150px] scrollbar-hide mb-2"
+                    placeholder={attachment ? "Ask about this image..." : "Type a message or ask to generate..."}
+                    className="w-full bg-transparent border-none text-white text-sm placeholder-gray-500 px-2 py-2 md:py-3 focus:ring-0 resize-none max-h-[120px] scrollbar-hide mb-1"
                     rows={1}
                  />
                  
                  <div className="flex justify-between items-center px-1 pt-1">
                     {/* Model Selector / Tools */}
                     <div className="flex items-center gap-1">
-                         <button className="p-1.5 text-gray-500 hover:text-white hover:bg-white/10 rounded-full transition-colors">
-                             <span className="material-symbols-outlined text-lg">attach_file</span>
+                         <input 
+                            type="file" 
+                            ref={fileInputRef} 
+                            accept="image/*" 
+                            className="hidden" 
+                            onChange={handleFileSelect} 
+                         />
+                         <button 
+                            onClick={() => fileInputRef.current?.click()}
+                            className="p-1.5 text-gray-500 hover:text-white hover:bg-white/10 rounded-full transition-colors relative"
+                            title="Upload Image"
+                         >
+                             <span className="material-symbols-outlined text-lg">add_photo_alternate</span>
                          </button>
                          <div 
                             className="flex items-center bg-black/20 rounded-full p-0.5 border border-brand-700/30 cursor-pointer ml-1"
-                            onClick={() => setIsFastMode(!isFastMode)}
+                            onClick={() => !attachment && setIsFastMode(!isFastMode)} // Disable toggle if attachment present
                          >
-                             <div className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all flex items-center gap-1 ${isFastMode ? 'bg-brand-accent text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>
-                                 <span className="material-symbols-outlined text-[12px]">bolt</span>
+                             <div className={`px-2 py-0.5 rounded-full text-[9px] md:text-[10px] font-bold transition-all flex items-center gap-1 ${isFastMode && !attachment ? 'bg-brand-accent text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>
+                                 <span className="material-symbols-outlined text-[10px] md:text-[12px]">bolt</span>
                                  Fast
                              </div>
-                             <div className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all flex items-center gap-1 ${!isFastMode ? 'bg-brand-gold text-brand-900 shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>
-                                 <span className="material-symbols-outlined text-[12px]">psychology</span>
-                                 Smart
+                             <div className={`px-2 py-0.5 rounded-full text-[9px] md:text-[10px] font-bold transition-all flex items-center gap-1 ${(!isFastMode || attachment) ? 'bg-brand-gold text-brand-900 shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>
+                                 <span className="material-symbols-outlined text-[10px] md:text-[12px]">{attachment ? 'visibility' : 'psychology'}</span>
+                                 {attachment ? 'Pro Vision' : 'Smart'}
                              </div>
                          </div>
                     </div>
@@ -382,14 +474,11 @@ export const ChatSection: React.FC = () => {
                     {/* Send Button */}
                     <button 
                         onClick={() => handleSend()}
-                        disabled={!input.trim() || isLoading}
-                        className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${input.trim() ? 'bg-white text-black hover:bg-gray-200' : 'bg-brand-700 text-gray-600 cursor-not-allowed'}`}
+                        disabled={(!input.trim() && !attachment) || isLoading}
+                        className={`w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center transition-all ${(input.trim() || attachment) ? 'bg-white text-black hover:bg-gray-200' : 'bg-brand-700 text-gray-600 cursor-not-allowed'}`}
                     >
                         <span className="material-symbols-outlined text-base">arrow_upward</span>
                     </button>
-                 </div>
-                 <div className="text-center text-[9px] text-gray-700 font-medium pt-1 w-full pointer-events-none select-none">
-                     Powered by Gemini 2.5 Flash & Lite. AI can make mistakes.
                  </div>
             </div>
         </div>

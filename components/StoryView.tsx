@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { PageData } from '../types';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from "docx";
 
 interface Props {
   content: string;
@@ -17,26 +18,26 @@ const RichTextRenderer: React.FC<{ text: string }> = ({ text }) => {
   const blocks = text.split(/\n\s*\n/);
   
   return (
-    <div className="font-serif antialiased space-y-4">
+    <div className="font-serif antialiased space-y-3 md:space-y-4">
       {blocks.map((block, idx) => {
         const trimmed = block.trim();
         if (!trimmed) return null;
 
         // Headers
         if (trimmed.startsWith('# ')) {
-             return <h1 key={idx} className="text-4xl font-bold font-serif text-brand-900 mb-8 mt-4 text-center leading-tight">{trimmed.replace('# ', '')}</h1>;
+             return <h1 key={idx} className="text-2xl md:text-4xl font-bold font-serif text-brand-900 mb-6 md:mb-8 mt-2 md:mt-4 text-center leading-tight">{trimmed.replace('# ', '')}</h1>;
         }
         if (trimmed.startsWith('## ')) {
-             return <h2 key={idx} className="text-2xl font-bold font-serif text-brand-800 mb-6 mt-8 border-b-2 border-brand-gold/20 pb-2">{trimmed.replace('## ', '')}</h2>;
+             return <h2 key={idx} className="text-xl md:text-2xl font-bold font-serif text-brand-800 mb-4 md:mb-6 mt-6 md:mt-8 border-b-2 border-brand-gold/20 pb-2">{trimmed.replace('## ', '')}</h2>;
         }
         if (trimmed.startsWith('### ')) {
-             return <h3 key={idx} className="text-xl font-semibold font-serif text-brand-700 mb-4 mt-6 italic">{trimmed.replace('### ', '')}</h3>;
+             return <h3 key={idx} className="text-lg md:text-xl font-semibold font-serif text-brand-700 mb-3 md:mb-4 mt-4 md:mt-6 italic">{trimmed.replace('### ', '')}</h3>;
         }
 
         // Blockquotes
         if (trimmed.startsWith('> ')) {
             return (
-                <blockquote key={idx} className="border-l-4 border-brand-gold pl-6 italic text-gray-700 my-6 bg-yellow-50/50 p-4 rounded-r-lg text-lg font-light leading-relaxed">
+                <blockquote key={idx} className="border-l-4 border-brand-gold pl-4 md:pl-6 italic text-gray-700 my-4 md:my-6 bg-yellow-50/50 p-3 md:p-4 rounded-r-lg text-base md:text-lg font-light leading-relaxed">
                     {parseInline(trimmed.replace(/> /g, ''))}
                 </blockquote>
             );
@@ -44,7 +45,7 @@ const RichTextRenderer: React.FC<{ text: string }> = ({ text }) => {
 
         // Horizontal Rule
         if (trimmed === '---') {
-            return <div key={idx} className="flex justify-center my-8"><span className="text-brand-gold/60 text-2xl tracking-[0.5em]">❖ ❖ ❖</span></div>;
+            return <div key={idx} className="flex justify-center my-6 md:my-8"><span className="text-brand-gold/60 text-xl md:text-2xl tracking-[0.5em]">❖ ❖ ❖</span></div>;
         }
 
         // Lists
@@ -54,14 +55,14 @@ const RichTextRenderer: React.FC<{ text: string }> = ({ text }) => {
                 <ul key={idx} className="space-y-2 mb-4 ml-4">
                     {items.map((item, i) => {
                         const cleanItem = item.replace(/^- /, '').replace(/^\d+\. /, '');
-                        return <li key={i} className="list-disc ml-4 text-gray-800 leading-relaxed pl-2 marker:text-brand-gold">{parseInline(cleanItem)}</li>
+                        return <li key={i} className="list-disc ml-4 text-gray-800 leading-relaxed pl-2 marker:text-brand-gold text-base md:text-lg">{parseInline(cleanItem)}</li>
                     })}
                 </ul>
             )
         }
 
         // Standard Paragraph
-        return <p key={idx} className="text-gray-800 leading-relaxed text-lg text-justify indent-8">{parseInline(trimmed)}</p>;
+        return <p key={idx} className="text-gray-800 leading-relaxed text-base md:text-lg text-justify indent-6 md:indent-8">{parseInline(trimmed)}</p>;
       })}
     </div>
   );
@@ -159,6 +160,92 @@ export const StoryView: React.FC<Props> = ({ content, onReset, isStreaming }) =>
             setCurrentPage(prev => prev - 1);
             setIsFlipping(false);
         }, 900);
+    }
+  };
+
+  const downloadDocx = async () => {
+    try {
+        const doc = new Document({
+            sections: [{
+                properties: {},
+                children: content.split('\n').map(line => {
+                    const trimmed = line.trim();
+                    if (!trimmed) return new Paragraph({ text: "" });
+                    
+                    // Headings
+                    if (trimmed.startsWith('# ')) {
+                        return new Paragraph({
+                            text: trimmed.replace('# ', ''),
+                            heading: HeadingLevel.HEADING_1,
+                            spacing: { after: 200 }
+                        });
+                    }
+                    if (trimmed.startsWith('## ')) {
+                         return new Paragraph({
+                            text: trimmed.replace('## ', ''),
+                            heading: HeadingLevel.HEADING_2,
+                            spacing: { before: 200, after: 120 }
+                        });
+                    }
+                    if (trimmed.startsWith('### ')) {
+                         return new Paragraph({
+                            text: trimmed.replace('### ', ''),
+                            heading: HeadingLevel.HEADING_3,
+                            spacing: { before: 200, after: 120 }
+                        });
+                    }
+                    
+                    // Blockquotes
+                    if (trimmed.startsWith('> ')) {
+                        return new Paragraph({
+                            children: [new TextRun({ text: trimmed.replace('> ', ''), italics: true })],
+                            indent: { left: 720 }, // 0.5 inch
+                            spacing: { after: 120 }
+                        });
+                    }
+
+                    // Horizontal Rule
+                    if (trimmed === '---') {
+                         return new Paragraph({
+                            text: "❖ ❖ ❖",
+                            alignment: AlignmentType.CENTER,
+                            spacing: { before: 200, after: 200 }
+                        });
+                    }
+                    
+                    // Parse formatting for standard paragraphs (bold/italic)
+                    const parts = trimmed.split(/(\*\*.*?\*\*|\*.*?\*)/g);
+                    const children = parts.map(part => {
+                        if (part.startsWith('**') && part.endsWith('**')) {
+                            return new TextRun({ text: part.slice(2, -2), bold: true });
+                        }
+                        if (part.startsWith('*') && part.endsWith('*')) {
+                            return new TextRun({ text: part.slice(1, -1), italics: true });
+                        }
+                        return new TextRun({ text: part });
+                    });
+                    
+                    return new Paragraph({
+                        children: children,
+                        spacing: { after: 120 },
+                        alignment: AlignmentType.JUSTIFIED
+                    });
+                })
+            }]
+        });
+
+        const blob = await Packer.toBlob(doc);
+        const url = URL.createObjectURL(blob);
+        const element = document.createElement("a");
+        element.href = url;
+        element.download = `${storyTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.docx`;
+        document.body.appendChild(element);
+        element.click();
+        document.body.removeChild(element);
+        URL.revokeObjectURL(url);
+    } catch (e) {
+        console.error("Docx generation failed", e);
+        alert("Could not generate Word document. Please try again.");
     }
   };
 
@@ -316,15 +403,15 @@ export const StoryView: React.FC<Props> = ({ content, onReset, isStreaming }) =>
         `}</style>
 
         {/* Controls Header (Hidden on Print) */}
-        <div className="w-full max-w-6xl flex justify-between items-center mb-6 px-4 animate-fade-in-down z-20 no-print">
+        <div className="w-full max-w-6xl flex flex-wrap justify-between items-center mb-4 md:mb-6 px-4 animate-fade-in-down z-20 no-print gap-2">
             <button 
                 onClick={onReset}
-                className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors text-xs uppercase tracking-widest font-bold bg-brand-800/50 px-4 py-2 rounded-full backdrop-blur-sm hover:bg-brand-700"
+                className="flex items-center gap-1 md:gap-2 text-gray-400 hover:text-white transition-colors text-[10px] md:text-xs uppercase tracking-widest font-bold bg-brand-800/50 px-3 py-1.5 md:px-4 md:py-2 rounded-full backdrop-blur-sm hover:bg-brand-700"
             >
-                <span className="material-symbols-outlined text-sm">arrow_back</span>
+                <span className="material-symbols-outlined text-sm md:text-sm">arrow_back</span>
                 Library
             </button>
-            <div className="text-gray-400 text-sm font-serif italic flex items-center gap-2">
+            <div className="text-gray-400 text-xs md:text-sm font-serif italic flex items-center gap-2 order-3 md:order-2 w-full md:w-auto justify-center md:justify-start mt-2 md:mt-0">
                 {isStreaming && currentPage === pages.length - 1 ? (
                     <span className="flex items-center gap-2 text-brand-gold animate-pulse bg-brand-800/50 px-4 py-1 rounded-full">
                         <span className="material-symbols-outlined text-sm">edit_note</span>
@@ -334,27 +421,34 @@ export const StoryView: React.FC<Props> = ({ content, onReset, isStreaming }) =>
                     <span className="bg-brand-800/50 px-4 py-1 rounded-full">{currentPage + 1} of {pages.length}</span>
                 )}
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 order-2 md:order-3">
+                <button 
+                    onClick={downloadDocx}
+                    className="text-gray-400 hover:text-blue-400 transition-colors text-[10px] md:text-xs flex items-center gap-1 md:gap-2 uppercase tracking-widest font-bold bg-brand-800/50 px-3 py-1.5 md:px-4 md:py-2 rounded-full backdrop-blur-sm hover:bg-brand-700"
+                    title="Export to Word (.docx)"
+                >
+                    <span className="material-symbols-outlined text-sm">description</span> <span className="hidden sm:inline">Word</span>
+                </button>
                 <button 
                     onClick={downloadMarkdown}
-                    className="text-gray-400 hover:text-brand-accent transition-colors text-xs flex items-center gap-2 uppercase tracking-widest font-bold bg-brand-800/50 px-4 py-2 rounded-full backdrop-blur-sm hover:bg-brand-700"
+                    className="text-gray-400 hover:text-brand-accent transition-colors text-[10px] md:text-xs flex items-center gap-1 md:gap-2 uppercase tracking-widest font-bold bg-brand-800/50 px-3 py-1.5 md:px-4 md:py-2 rounded-full backdrop-blur-sm hover:bg-brand-700"
                     title="Download Source Text"
                 >
-                    <span className="material-symbols-outlined text-sm">description</span> <span className="hidden sm:inline">Markdown</span>
+                    <span className="material-symbols-outlined text-sm">code</span> <span className="hidden sm:inline">MD</span>
                 </button>
                 <button 
                     onClick={downloadBookHTML}
-                    className="text-gray-400 hover:text-brand-gold transition-colors text-xs flex items-center gap-2 uppercase tracking-widest font-bold bg-brand-800/50 px-4 py-2 rounded-full backdrop-blur-sm hover:bg-brand-700"
+                    className="text-gray-400 hover:text-brand-gold transition-colors text-[10px] md:text-xs flex items-center gap-1 md:gap-2 uppercase tracking-widest font-bold bg-brand-800/50 px-3 py-1.5 md:px-4 md:py-2 rounded-full backdrop-blur-sm hover:bg-brand-700"
                     title="Download Designed Book File"
                 >
-                    <span className="material-symbols-outlined text-sm">book</span> <span className="hidden sm:inline">Export Book</span>
+                    <span className="material-symbols-outlined text-sm">book</span> <span className="hidden sm:inline">HTML</span>
                 </button>
                 <button 
                     onClick={() => window.print()}
-                    className="text-gray-400 hover:text-white transition-colors text-xs flex items-center gap-2 uppercase tracking-widest font-bold bg-brand-800/50 px-4 py-2 rounded-full backdrop-blur-sm hover:bg-brand-700"
+                    className="text-gray-400 hover:text-white transition-colors text-[10px] md:text-xs flex items-center gap-1 md:gap-2 uppercase tracking-widest font-bold bg-brand-800/50 px-3 py-1.5 md:px-4 md:py-2 rounded-full backdrop-blur-sm hover:bg-brand-700"
                     title="Print to PDF"
                 >
-                    <span className="material-symbols-outlined text-sm">print</span> <span className="hidden sm:inline">Print / PDF</span>
+                    <span className="material-symbols-outlined text-sm">print</span> <span className="hidden sm:inline">PDF</span>
                 </button>
             </div>
         </div>
@@ -474,23 +568,25 @@ export const StoryView: React.FC<Props> = ({ content, onReset, isStreaming }) =>
         </div>
 
         {/* Mobile View (Hidden on Print) */}
-        <div className="md:hidden w-full px-4 max-w-lg no-print">
-             <div className="bg-[#f4ecd8] text-gray-900 rounded-lg shadow-xl p-6 min-h-[60vh] relative border-r-4 border-gray-300">
+        <div className="md:hidden w-full px-2 no-print flex-1 flex flex-col">
+             <div className="bg-[#f4ecd8] text-gray-900 rounded-lg shadow-xl p-6 min-h-[60vh] relative border-r-4 border-gray-300 flex flex-col">
                 <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-b from-black/5 to-transparent"></div>
-                {activePage && <RichTextRenderer text={activePage.content} />}
-                <div className="flex justify-between mt-8 pt-4 border-t border-gray-300/50">
+                <div className="flex-1">
+                    {activePage && <RichTextRenderer text={activePage.content} />}
+                </div>
+                <div className="flex justify-between mt-6 pt-4 border-t border-gray-300/50">
                     <button 
                         onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
                         disabled={currentPage === 0}
-                        className="text-brand-900 disabled:opacity-30 font-bold uppercase text-xs"
+                        className="text-brand-900 disabled:opacity-30 font-bold uppercase text-xs px-3 py-2 bg-black/5 rounded hover:bg-black/10"
                     >
                         Previous
                     </button>
-                    <span className="text-gray-500 text-xs font-serif italic">{currentPage + 1} / {pages.length}</span>
+                    <span className="text-gray-500 text-xs font-serif italic flex items-center">{currentPage + 1} / {pages.length}</span>
                     <button 
                         onClick={() => setCurrentPage(p => Math.min(pages.length - 1, p + 1))}
                         disabled={currentPage === pages.length - 1}
-                        className="text-brand-900 disabled:opacity-30 font-bold uppercase text-xs"
+                        className="text-brand-900 disabled:opacity-30 font-bold uppercase text-xs px-3 py-2 bg-black/5 rounded hover:bg-black/10"
                     >
                         Next
                     </button>
