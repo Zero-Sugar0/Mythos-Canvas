@@ -46,6 +46,15 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
   const [variationCount, setVariationCount] = useState<1 | 4>(1);
   const [gallery, setGallery] = useState<ImageHistoryItem[]>([]);
   const [aspectRatio, setAspectRatio] = useState('1:1');
+  
+  // Delete Confirmation State
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  // Zoom & Pan State
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   // Load history on mount
   useEffect(() => {
@@ -71,6 +80,12 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
       }
   }, [initialImage]);
 
+  // Reset zoom on new image
+  useEffect(() => {
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+  }, [resultImage]);
+
   const saveToGallery = (imageData: string, usedPrompt: string, usedMode: StudioMode) => {
       // Check if duplicate (simple check)
       if (gallery.some(g => g.imageData === imageData)) return;
@@ -95,11 +110,17 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
       }
   };
 
-  const deleteFromGallery = (e: React.MouseEvent, id: string) => {
-      e.stopPropagation();
-      const newGallery = gallery.filter(g => g.id !== id);
+  const confirmDelete = () => {
+      if (!deleteId) return;
+      const newGallery = gallery.filter(g => g.id !== deleteId);
       setGallery(newGallery);
       localStorage.setItem('mythos_image_history', JSON.stringify(newGallery));
+      setDeleteId(null);
+  };
+
+  const requestDelete = (e: React.MouseEvent, id: string) => {
+      e.stopPropagation();
+      setDeleteId(id);
   };
 
   const loadFromGallery = (item: ImageHistoryItem) => {
@@ -174,11 +195,70 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
     }
   };
 
+  // Zoom/Pan Handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (zoom > 1) {
+        e.preventDefault();
+        setIsDragging(true);
+        setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isDragging) {
+        e.preventDefault();
+        setPan({
+            x: e.clientX - dragStart.x,
+            y: e.clientY - dragStart.y
+        });
+    }
+  };
+
+  const handleMouseUp = () => setIsDragging(false);
+
+  const adjustZoom = (delta: number) => {
+      setZoom(prev => {
+          const newZoom = Math.max(1, Math.min(5, prev + delta));
+          if (newZoom === 1) setPan({ x: 0, y: 0 });
+          return newZoom;
+      });
+  };
+
   return (
-    <div className="max-w-6xl mx-auto p-4 md:p-6 animate-fade-in">
+    <div className="max-w-6xl mx-auto p-4 md:p-6 animate-fade-in relative">
+      
+      {/* Delete Confirmation Modal */}
+      {deleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+          <div className="bg-brand-800 border border-brand-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl transform scale-100 transition-all">
+             <div className="text-center mb-4">
+               <div className="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-3">
+                 <span className="material-symbols-outlined text-red-500 text-2xl">delete_forever</span>
+               </div>
+               <h3 className="text-xl font-bold text-white mb-2">Delete Image?</h3>
+               <p className="text-sm text-gray-400">This action cannot be undone. The image will be permanently removed from your library.</p>
+             </div>
+             <div className="flex gap-3">
+               <button 
+                 onClick={() => setDeleteId(null)}
+                 className="flex-1 py-3 rounded-xl bg-brand-700 text-white font-medium hover:bg-brand-600 transition-colors"
+               >
+                 Cancel
+               </button>
+               <button 
+                 onClick={confirmDelete}
+                 className="flex-1 py-3 rounded-xl bg-red-500 text-white font-bold hover:bg-red-600 transition-colors shadow-lg hover:shadow-red-500/30"
+               >
+                 Delete
+               </button>
+             </div>
+          </div>
+        </div>
+      )}
+
       <div className="text-center mb-6 md:mb-8">
         <h2 className="text-2xl md:text-3xl font-serif text-white mb-2 flex items-center justify-center gap-2 md:gap-3">
-            <span className="material-symbols-outlined text-brand-gold text-3xl md:text-4xl">image_edit_auto</span>
+            <span className="material-symbols-outlined text-brand-gold text-3xl md:text-4xl">palette</span>
             Canvas Studio
         </h2>
         <p className="text-sm md:text-base text-gray-400">Powered by advanced vision AI. Create new worlds or transform existing ones.</p>
@@ -309,7 +389,7 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
                 <button
                     onClick={handleAction}
                     disabled={(!prompt || (mode === 'EDIT' && !selectedFile) || isGenerating)}
-                    className="w-full mt-2 bg-brand-accent hover:bg-indigo-500 disabled:opacity-50 text-white px-4 py-3 md:px-6 md:py-4 rounded-xl font-bold transition-colors flex items-center justify-center gap-2 shadow-lg text-sm md:text-base"
+                    className="w-full mt-2 bg-brand-accent hover:bg-indigo-500 disabled:opacity-50 text-white px-4 py-3 md:px-6 md:py-4 rounded-xl font-bold transition-colors flex items-center justify-center gap-2 shadow-lg text-sm md:text-base active:scale-95 transform duration-150"
                 >
                     {isGenerating ? (
                         <>
@@ -333,7 +413,7 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
                 {resultImage && (
                     <button 
                         onClick={() => saveToGallery(resultImage!, prompt, mode)}
-                        className="text-xs flex items-center gap-1 text-gray-400 hover:text-brand-gold transition-colors"
+                        className="text-xs flex items-center gap-1 text-gray-400 hover:text-brand-gold transition-colors active:scale-90"
                         title="Save to Gallery"
                     >
                          <span className="material-symbols-outlined text-sm">bookmark_add</span> Save
@@ -341,10 +421,68 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
                 )}
             </div>
             
-            {/* Main Preview */}
-            <div className="flex-1 bg-black/40 rounded-xl flex items-center justify-center border border-brand-700 overflow-hidden relative group mb-4">
+            {/* Main Preview with Zoom/Pan */}
+            <div 
+                className="flex-1 bg-black/40 rounded-xl flex items-center justify-center border border-brand-700 overflow-hidden relative group mb-4 select-none"
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onMouseLeave={handleMouseUp}
+            >
                 {resultImage ? (
-                    <img src={resultImage} alt="Generated" className="max-w-full max-h-[400px] object-contain shadow-2xl" />
+                    <>
+                        <img 
+                            src={resultImage} 
+                            alt="Generated" 
+                            className={`max-w-full max-h-[400px] object-contain shadow-2xl ${isDragging ? 'duration-0' : 'duration-200 ease-out transition-transform'}`}
+                            style={{ 
+                                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                                cursor: zoom > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default'
+                            }}
+                            draggable={false}
+                        />
+                        
+                        {/* Zoom Controls Overlay */}
+                        <div className="absolute bottom-4 left-4 flex gap-1 bg-black/60 backdrop-blur-md rounded-lg p-1 border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-xl">
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); adjustZoom(-0.5); }}
+                                className="w-7 h-7 flex items-center justify-center hover:bg-white/20 rounded-md text-white disabled:opacity-30 transition-colors"
+                                disabled={zoom <= 1}
+                                title="Zoom Out"
+                            >
+                                <span className="material-symbols-outlined text-lg">remove</span>
+                            </button>
+                            <span className="text-[10px] text-white font-mono flex items-center px-1 min-w-[3.5ch] justify-center">
+                                {Math.round(zoom * 100)}%
+                            </span>
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); adjustZoom(0.5); }}
+                                className="w-7 h-7 flex items-center justify-center hover:bg-white/20 rounded-md text-white disabled:opacity-30 transition-colors"
+                                disabled={zoom >= 5}
+                                title="Zoom In"
+                            >
+                                <span className="material-symbols-outlined text-lg">add</span>
+                            </button>
+                            <div className="w-px bg-white/20 mx-1 my-1"></div>
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); setZoom(1); setPan({x:0,y:0}); }}
+                                className="w-7 h-7 flex items-center justify-center hover:bg-white/20 rounded-md text-white transition-colors"
+                                title="Reset Zoom"
+                            >
+                                <span className="material-symbols-outlined text-lg">restart_alt</span>
+                            </button>
+                        </div>
+
+                        <a 
+                            href={resultImage} 
+                            download={`mythos_canvas_${Date.now()}.png`}
+                            className="absolute bottom-4 right-4 bg-brand-900/90 text-white p-3 rounded-full hover:bg-black transition-colors backdrop-blur-sm border border-brand-700 shadow-lg active:scale-90 transform z-10"
+                            title="Download"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <span className="material-symbols-outlined">download</span>
+                        </a>
+                    </>
                 ) : isGenerating ? (
                     <div className="text-center">
                          <div className="w-12 h-12 md:w-16 md:h-16 border-4 border-brand-accent border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
@@ -357,17 +495,6 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
                         <span className="material-symbols-outlined text-5xl md:text-6xl mb-2 opacity-20">image</span>
                         <p className="italic text-sm">Your creation will appear here</p>
                     </div>
-                )}
-                
-                {resultImage && (
-                    <a 
-                        href={resultImage} 
-                        download={`mythos_canvas_${Date.now()}.png`}
-                        className="absolute bottom-4 right-4 bg-brand-900/90 text-white p-3 rounded-full hover:bg-black transition-colors backdrop-blur-sm border border-brand-700 shadow-lg"
-                        title="Download"
-                    >
-                        <span className="material-symbols-outlined">download</span>
-                    </a>
                 )}
             </div>
 
@@ -420,8 +547,8 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
                           </div>
 
                           <button 
-                              onClick={(e) => deleteFromGallery(e, item.id)}
-                              className="absolute top-2 right-2 bg-black/50 hover:bg-red-500/80 text-white p-1.5 rounded-full backdrop-blur-sm opacity-100 md:opacity-0 group-hover:opacity-100 transition-all"
+                              onClick={(e) => requestDelete(e, item.id)}
+                              className="absolute top-2 right-2 bg-black/50 hover:bg-red-500/80 text-white p-1.5 rounded-full backdrop-blur-sm opacity-100 md:opacity-0 group-hover:opacity-100 transition-all active:scale-90"
                               title="Delete"
                           >
                               <span className="material-symbols-outlined text-xs">delete</span>

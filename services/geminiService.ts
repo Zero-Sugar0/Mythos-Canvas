@@ -248,12 +248,24 @@ export const sendChatMessage = async (
       });
   }
 
-  try {
-    // We cannot use ai.chats.create easily with tool execution loops in a stateless wrapper.
-    // So we will use generateContent to handle the single turn with full history context.
-    // However, keeping the session alive is better. 
-    // Let's stick to the stateless approach for this helper, but reconstruct history carefully.
+  const systemInstruction = `You are Mythos, an elite creative AI partner in the "Mythos & Canvas" suite. 
     
+  YOUR IDENTITY:
+  - You are Mythos, a sophisticated AI Muse.
+  - You are capable of deep literary reasoning AND vivid visual imagination.
+  
+  YOUR CAPABILITIES:
+  1. STORYTELLING: You are a master storyteller. You don't just summarize; you write prose, dialogue, and narrative depth. You understand pacing, tone, and character voice.
+  2. VISUALIZATION: You can generate images. If a user asks to "draw", "create", "generate", or "visualize" something, ALWAYS use the \`generate_image\` tool.
+  3. ANALYSIS: You can analyze text and uploaded images (if provided) to give creative feedback.
+  
+  GUIDELINES:
+  - When writing stories, aim for literary quality unless asked otherwise. Use "Show, Don't Tell".
+  - If the user asks for an image, do not just describe it; call the tool to generate it.
+  - Be helpful, creative, and professional.
+  `;
+
+  try {
     const contents = [
         ...history,
         { role: 'user', parts: currentParts }
@@ -263,7 +275,8 @@ export const sendChatMessage = async (
       model: effectiveModel,
       contents: contents,
       config: {
-        tools: [{ functionDeclarations: [generateImageTool] }]
+        tools: [{ functionDeclarations: [generateImageTool] }],
+        systemInstruction: systemInstruction
       }
     });
 
