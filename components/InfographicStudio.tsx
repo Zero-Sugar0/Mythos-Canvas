@@ -27,23 +27,35 @@ const STYLES = [
 ];
 
 const ASPECT_RATIOS = [
-    { label: 'Square', value: '1:1', icon: 'crop_square' },
-    { label: 'Story', value: '9:16', icon: 'crop_portrait' },
-    { label: 'Slide', value: '16:9', icon: 'crop_16_9' },
-    { label: 'Card', value: '4:3', icon: 'crop_landscape' },
+    { label: 'Slide (16:9)', value: '16:9', icon: 'crop_16_9' },
+    { label: 'Card (4:3)', value: '4:3', icon: 'crop_landscape' },
+    { label: 'Square (1:1)', value: '1:1', icon: 'crop_square' },
+    { label: 'Story (9:16)', value: '9:16', icon: 'crop_portrait' },
+];
+
+const CHART_TYPES = [
+    { id: 'Bar', label: 'Bar Chart', icon: 'bar_chart' },
+    { id: 'Line', label: 'Line Chart', icon: 'show_chart' },
+    { id: 'Pie', label: 'Pie Chart', icon: 'pie_chart' },
+    { id: 'Area', label: 'Area Chart', icon: 'area_chart' },
 ];
 
 export const InfographicStudio: React.FC = () => {
+    const [mode, setMode] = useState<'VISUAL' | 'CHART'>('VISUAL');
     const [inputText, setInputText] = useState('');
     const [selectedStyle, setSelectedStyle] = useState(STYLES[0].id);
     const [customStylePrompt, setCustomStylePrompt] = useState('');
-    const [aspectRatio, setAspectRatio] = useState('4:3');
+    const [aspectRatio, setAspectRatio] = useState('16:9');
     const [useCase, setUseCase] = useState(USE_CASES[0].id);
     const [isPlanning, setIsPlanning] = useState(false);
     const [items, setItems] = useState<InfographicItem[]>([]);
     const [fileName, setFileName] = useState<string | null>(null);
-    const [includeOverlay, setIncludeOverlay] = useState(true);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Chart Options
+    const [chartType, setChartType] = useState<string>('Bar');
+    const [xAxisLabel, setXAxisLabel] = useState('');
+    const [yAxisLabel, setYAxisLabel] = useState('');
 
     // Mobile View State
     const [mobileTab, setMobileTab] = useState<'EDITOR' | 'RESULTS'>('EDITOR');
@@ -83,7 +95,6 @@ export const InfographicStudio: React.FC = () => {
         if (!inputText.trim()) return;
         setIsPlanning(true);
         
-        // On mobile, auto-switch to results tab to show loading state
         if (window.innerWidth < 1024) {
             setMobileTab('RESULTS');
         }
@@ -91,14 +102,20 @@ export const InfographicStudio: React.FC = () => {
         setItems([]);
         try {
             const styleToUse = selectedStyle === 'Custom' ? customStylePrompt : selectedStyle;
-            const structuredItems = await structureInfographicData(inputText, styleToUse);
-            // Initialize items with the selected aspect ratio
+            const chartOptions = mode === 'CHART' ? { 
+                isChart: true, 
+                chartType, 
+                xAxisLabel, 
+                yAxisLabel 
+            } : undefined;
+
+            const structuredItems = await structureInfographicData(inputText, styleToUse, chartOptions);
             const initializedItems = structuredItems.map(item => ({ ...item, aspectRatio }));
             setItems(initializedItems);
             generateAllImages(initializedItems);
         } catch (e) {
             alert("Failed to analyze text. Please try again.");
-            setIsPlanning(false); // Only unset if error
+            setIsPlanning(false); 
         } finally {
             setIsPlanning(false);
         }
@@ -116,18 +133,11 @@ export const InfographicStudio: React.FC = () => {
             setItems(prev => prev.map(p => p.id === item.id ? { ...p, status: 'generating' } : p));
             
             const styleToUse = selectedStyle === 'Custom' ? customStylePrompt : selectedStyle;
-            
-            // Refined Prompt to avoid overriding complex diagram backgrounds (e.g. maps/scenes)
-            const enhancedPrompt = `${item.visualPrompt} (${styleToUse} style). High resolution, detailed, explanatory visualization, 2k.`;
+            const enhancedPrompt = `${item.visualPrompt} (${styleToUse} style). High resolution, professional, clear background, minimal text artifacts, 2k.`;
             
             const rawImageUrl = await generateImage(enhancedPrompt, item.aspectRatio || aspectRatio);
             
-            let finalImageUrl = rawImageUrl;
-            if (includeOverlay) {
-                finalImageUrl = await renderImageWithOverlay(rawImageUrl, item.title, item.summary, item.aspectRatio || aspectRatio);
-            }
-
-            setItems(prev => prev.map(p => p.id === item.id ? { ...p, status: 'done', imageData: finalImageUrl } : p));
+            setItems(prev => prev.map(p => p.id === item.id ? { ...p, status: 'done', imageData: rawImageUrl } : p));
         } catch (e) {
             setItems(prev => prev.map(p => p.id === item.id ? { ...p, status: 'failed' } : p));
         }
@@ -138,82 +148,12 @@ export const InfographicStudio: React.FC = () => {
         generateSingleItem(item);
     };
 
-    // Text Overlay Engine using Canvas
-    const renderImageWithOverlay = (base64Image: string, title: string, summary: string, ratio: string): Promise<string> => {
-        return new Promise((resolve) => {
-            const img = new Image();
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                // Set high resolution canvas
-                canvas.width = img.width;
-                canvas.height = img.height;
-                const ctx = canvas.getContext('2d');
-                if (!ctx) {
-                    resolve(base64Image);
-                    return;
-                }
-
-                // Draw Base Image
-                ctx.drawImage(img, 0, 0);
-
-                // Overlay Settings
-                const isVertical = ratio === '9:16';
-                const padding = canvas.width * 0.05;
-                const bottomAreaHeight = canvas.height * (isVertical ? 0.25 : 0.3);
-                
-                // Gradient Background for Text
-                const gradient = ctx.createLinearGradient(0, canvas.height - bottomAreaHeight, 0, canvas.height);
-                gradient.addColorStop(0, 'rgba(15, 23, 42, 0)');
-                gradient.addColorStop(0.2, 'rgba(15, 23, 42, 0.9)');
-                gradient.addColorStop(1, 'rgba(15, 23, 42, 1)');
-                
-                ctx.fillStyle = gradient;
-                ctx.fillRect(0, canvas.height - bottomAreaHeight, canvas.width, bottomAreaHeight);
-
-                // Text Settings
-                ctx.fillStyle = '#ffffff';
-                ctx.textAlign = 'left';
-                
-                // Draw Title
-                const titleSize = Math.floor(canvas.width * 0.05);
-                ctx.font = `bold ${titleSize}px 'Inter', sans-serif`;
-                ctx.fillText(title, padding, canvas.height - (bottomAreaHeight * 0.6));
-
-                // Draw Summary (Word Wrap)
-                const summarySize = Math.floor(canvas.width * 0.03);
-                ctx.font = `normal ${summarySize}px 'Inter', sans-serif`;
-                ctx.fillStyle = '#cbd5e1';
-                
-                const maxWidth = canvas.width - (padding * 2);
-                const words = summary.split(' ');
-                let line = '';
-                let y = canvas.height - (bottomAreaHeight * 0.45);
-                const lineHeight = summarySize * 1.4;
-
-                for(let n = 0; n < words.length; n++) {
-                    const testLine = line + words[n] + ' ';
-                    const metrics = ctx.measureText(testLine);
-                    const testWidth = metrics.width;
-                    if (testWidth > maxWidth && n > 0) {
-                        ctx.fillText(line, padding, y);
-                        line = words[n] + ' ';
-                        y += lineHeight;
-                    } else {
-                        line = testLine;
-                    }
-                }
-                ctx.fillText(line, padding, y);
-
-                resolve(canvas.toDataURL('image/png'));
-            };
-            img.src = base64Image;
-        });
-    };
-
     const handleExportPDF = () => {
         if (items.length === 0) return;
         
-        // Use A4 landscape or portrait depending on majority aspect ratio, simplfied to A4 Landscape for now
+        // Very basic PDF export for now - capturing the images only
+        // Ideally, we'd use html2canvas on the "Slide" div, but that's complex without new deps.
+        // We will just export the AI generated assets.
         const doc = new jsPDF({
             orientation: aspectRatio === '9:16' ? 'portrait' : 'landscape',
         });
@@ -223,63 +163,106 @@ export const InfographicStudio: React.FC = () => {
 
         items.forEach((item, index) => {
             if (index > 0) doc.addPage();
-            
-            // Add background color
-            doc.setFillColor(15, 23, 42); // Brand 900
+            doc.setFillColor(15, 23, 42); 
             doc.rect(0, 0, pageWidth, pageHeight, 'F');
 
             if (item.imageData) {
-                // Calculate Fit
                 const imgProps = doc.getImageProperties(item.imageData);
                 const imgRatio = imgProps.width / imgProps.height;
-                let w = pageWidth;
+                let w = pageWidth - 20; // margins
                 let h = w / imgRatio;
-                if (h > pageHeight) {
-                    h = pageHeight;
+                if (h > pageHeight - 40) {
+                    h = pageHeight - 40;
                     w = h * imgRatio;
                 }
                 const x = (pageWidth - w) / 2;
                 const y = (pageHeight - h) / 2;
                 
                 doc.addImage(item.imageData, 'PNG', x, y, w, h);
+                
+                // Add simple text summary at bottom
+                doc.setTextColor(255, 255, 255);
+                doc.setFontSize(10);
+                doc.text(item.title, 10, pageHeight - 10);
             }
         });
 
-        doc.save('mythos_infographic_deck.pdf');
+        doc.save('mythos_slides.pdf');
     };
 
-    const handleDownload = (e: React.MouseEvent, item: InfographicItem) => {
-        e.stopPropagation();
-        if (item.imageData) {
-            const link = document.createElement('a');
-            link.href = item.imageData;
-            link.download = `infographic_${item.title.replace(/\s+/g, '_')}.png`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }
-    };
+    const renderSlide = (item: InfographicItem, index: number, isPreview = false) => {
+        // Slide Layout Calculation
+        const isPortrait = item.aspectRatio === '9:16';
+        
+        return (
+            <div 
+                className={`bg-white text-gray-900 overflow-hidden relative shadow-2xl flex flex-col ${isPreview ? 'h-full w-full' : 'h-[80vh] w-auto aspect-[16/9]'}`}
+                style={{ 
+                    aspectRatio: item.aspectRatio ? item.aspectRatio.replace(':', '/') : '16/9',
+                    fontFamily: "'Inter', sans-serif"
+                }}
+            >
+                {/* Header Bar */}
+                <div className="h-16 flex-none bg-[#f8fafc] border-b border-gray-200 px-8 flex items-center justify-between">
+                    <h3 className="text-xl font-bold text-slate-800">{item.title}</h3>
+                    <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-brand-accent"></div>
+                        <span className="text-xs uppercase tracking-widest text-slate-400 font-bold">Mythos Deck</span>
+                    </div>
+                </div>
 
-    // --- Slide View Logic ---
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (slideIndex === null) return;
-            if (e.key === 'ArrowRight') {
-                e.preventDefault();
-                setSlideIndex(prev => (prev !== null && prev < items.length - 1 ? prev + 1 : prev));
-            }
-            if (e.key === 'ArrowLeft') {
-                e.preventDefault();
-                setSlideIndex(prev => (prev !== null && prev > 0 ? prev - 1 : prev));
-            }
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                setSlideIndex(null);
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [slideIndex, items.length]);
+                {/* Content Area */}
+                <div className={`flex-1 p-8 flex gap-8 ${isPortrait ? 'flex-col' : 'flex-row'}`}>
+                    {/* Text Column */}
+                    <div className={`${isPortrait ? 'w-full h-1/3' : 'w-1/3 h-full'} flex flex-col justify-center`}>
+                        <div className="prose prose-sm prose-slate">
+                            <h4 className="text-2xl font-serif text-slate-900 mb-4 leading-tight">{item.title}</h4>
+                            <p className="text-slate-600 text-sm md:text-base leading-relaxed">{item.summary}</p>
+                            <ul className="mt-4 space-y-2">
+                                <li className="flex items-start gap-2 text-xs text-slate-500">
+                                    <span className="text-brand-accent mt-0.5">●</span> Key Insight 1
+                                </li>
+                                <li className="flex items-start gap-2 text-xs text-slate-500">
+                                    <span className="text-brand-accent mt-0.5">●</span> Data Point 2
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    {/* Image/Chart Column */}
+                    <div className={`${isPortrait ? 'w-full h-2/3' : 'w-2/3 h-full'} bg-slate-100 rounded-xl overflow-hidden relative flex items-center justify-center border border-slate-200`}>
+                        {item.status === 'done' && item.imageData ? (
+                            <img src={item.imageData} alt="Visual" className="max-w-full max-h-full object-contain shadow-sm" />
+                        ) : item.status === 'failed' ? (
+                            <div className="text-center p-4">
+                                <span className="material-symbols-outlined text-red-400 text-4xl mb-2">broken_image</span>
+                                <p className="text-red-400 text-xs">Generation Failed</p>
+                            </div>
+                        ) : (
+                            <div className="text-center p-4">
+                                <div className="w-12 h-12 border-4 border-slate-300 border-t-brand-accent rounded-full animate-spin mx-auto mb-4"></div>
+                                <p className="text-slate-400 text-xs uppercase tracking-widest font-bold">Rendering Visual...</p>
+                            </div>
+                        )}
+                        
+                        {/* Fake Legend for Charts */}
+                        {item.isChart && (
+                            <div className="absolute bottom-4 right-4 bg-white/90 backdrop-blur px-3 py-2 rounded shadow text-[10px] text-slate-600 border border-slate-200">
+                                <div className="flex items-center gap-2 mb-1"><span className="w-2 h-2 bg-blue-500 rounded-sm"></span> Series A</div>
+                                <div className="flex items-center gap-2"><span className="w-2 h-2 bg-emerald-500 rounded-sm"></span> Series B</div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Footer */}
+                <div className="h-10 flex-none px-8 flex items-center justify-between border-t border-gray-100 text-[10px] text-slate-400">
+                    <span>Generated by Mythos</span>
+                    <span>{index + 1}</span>
+                </div>
+            </div>
+        );
+    };
 
     return (
         <div className="flex flex-col lg:flex-row h-[calc(100dvh-50px)] md:h-[calc(100dvh-60px)] overflow-hidden gap-0 bg-[#0a0f1c] animate-fade-in relative">
@@ -309,10 +292,10 @@ export const InfographicStudio: React.FC = () => {
                         <span className="material-symbols-outlined text-brand-gold text-2xl">dashboard_customize</span>
                         Infographics
                     </h2>
-                    <p className="text-xs text-gray-500">Transform text into visual diagrams and knowledge cards.</p>
+                    <p className="text-xs text-gray-500">Transform text into professional slides.</p>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
                     
                     {/* Step 1: Content Input */}
                     <div className="bg-[#1e293b]/50 rounded-xl border border-brand-700 p-4 relative group hover:border-brand-600 transition-colors">
@@ -322,24 +305,12 @@ export const InfographicStudio: React.FC = () => {
                             Content Source
                         </label>
                         
-                        <div className="mb-3">
-                             <select 
-                                value={useCase} 
-                                onChange={(e) => handleUseCaseChange(e.target.value)}
-                                className="w-full bg-[#0f172a] border border-brand-700 rounded-lg px-3 py-2 text-sm text-white focus:ring-1 focus:ring-brand-accent focus:border-brand-accent transition-all cursor-pointer mb-2"
-                            >
-                                {USE_CASES.map(uc => (
-                                    <option key={uc.id} value={uc.id}>{uc.label}</option>
-                                ))}
-                            </select>
-                        </div>
-
                         <div className="relative">
                             <textarea
                                 value={inputText}
                                 onChange={(e) => setInputText(e.target.value)}
-                                placeholder="Paste your article notes, documentation, or summary here..."
-                                className="w-full bg-[#0f172a] border border-brand-700 rounded-xl p-3 text-sm text-gray-200 focus:ring-1 focus:ring-brand-accent focus:border-brand-accent transition-all resize-none h-28 placeholder-gray-600 shadow-inner"
+                                placeholder="Paste your article notes, data, or summary here..."
+                                className="w-full bg-[#0f172a] border border-brand-700 rounded-xl p-3 text-sm text-gray-200 focus:ring-1 focus:ring-brand-accent focus:border-brand-accent transition-all resize-none h-32 placeholder-gray-600 shadow-inner"
                             />
                             <div className="absolute bottom-2 right-2 flex gap-2">
                                 {fileName && (
@@ -361,34 +332,79 @@ export const InfographicStudio: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Step 2: Visual Style */}
+                    {/* Step 2: Mode Selection */}
                     <div className="bg-[#1e293b]/50 rounded-xl border border-brand-700 p-4 relative group hover:border-brand-600 transition-colors">
                         <div className="absolute top-0 right-0 p-2 opacity-10 font-black text-6xl text-white pointer-events-none -mt-2 -mr-2">2</div>
                         <label className="text-[10px] font-bold text-brand-gold uppercase tracking-widest mb-3 block flex items-center gap-2">
                             <span className="w-5 h-5 rounded-full bg-brand-gold text-brand-900 flex items-center justify-center text-[10px]">2</span>
-                            Visual Style
+                            Visualization Mode
                         </label>
-                        
-                        <div className="grid grid-cols-3 gap-2 mb-3">
-                            {STYLES.map(style => (
-                                <button
-                                    key={style.id}
-                                    onClick={() => setSelectedStyle(style.id)}
-                                    className={`relative p-2 rounded-lg border text-center transition-all duration-200 flex flex-col items-center gap-1 group ${selectedStyle === style.id ? 'bg-brand-800 border-brand-gold/50 shadow-lg shadow-brand-gold/5' : 'bg-transparent border-brand-800 hover:bg-brand-800/50'}`}
-                                >
-                                    <span className={`material-symbols-outlined text-xl group-hover:scale-110 transition-transform ${selectedStyle === style.id ? 'text-brand-gold' : 'text-gray-500'}`}>{style.icon}</span>
-                                    <span className={`text-[9px] font-bold leading-tight ${selectedStyle === style.id ? 'text-white' : 'text-gray-400'}`}>{style.label}</span>
-                                </button>
-                            ))}
+
+                        <div className="flex bg-[#0f172a] p-1 rounded-lg border border-brand-700 mb-4">
+                            <button 
+                                onClick={() => setMode('VISUAL')}
+                                className={`flex-1 py-2 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-2 ${mode === 'VISUAL' ? 'bg-brand-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                            >
+                                <span className="material-symbols-outlined text-sm">image</span> Visual
+                            </button>
+                            <button 
+                                onClick={() => setMode('CHART')}
+                                className={`flex-1 py-2 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-2 ${mode === 'CHART' ? 'bg-brand-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                            >
+                                <span className="material-symbols-outlined text-sm">bar_chart</span> Chart
+                            </button>
                         </div>
-                        {selectedStyle === 'Custom' && (
-                            <input 
-                                type="text"
-                                value={customStylePrompt}
-                                onChange={(e) => setCustomStylePrompt(e.target.value)}
-                                placeholder="e.g. 1950s comic book style, highly detailed..."
-                                className="w-full bg-[#0f172a] border border-brand-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-gold animate-fade-in"
-                            />
+                        
+                        {mode === 'VISUAL' ? (
+                            <div className="grid grid-cols-3 gap-2">
+                                {STYLES.map(style => (
+                                    <button
+                                        key={style.id}
+                                        onClick={() => setSelectedStyle(style.id)}
+                                        className={`relative p-2 rounded-lg border text-center transition-all duration-200 flex flex-col items-center gap-1 group ${selectedStyle === style.id ? 'bg-brand-800 border-brand-gold/50 shadow-lg shadow-brand-gold/5' : 'bg-transparent border-brand-800 hover:bg-brand-800/50'}`}
+                                    >
+                                        <span className={`material-symbols-outlined text-xl group-hover:scale-110 transition-transform ${selectedStyle === style.id ? 'text-brand-gold' : 'text-gray-500'}`}>{style.icon}</span>
+                                        <span className={`text-[9px] font-bold leading-tight ${selectedStyle === style.id ? 'text-white' : 'text-gray-400'}`}>{style.label}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                <label className="text-[10px] text-gray-400 uppercase font-bold">Chart Type</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {CHART_TYPES.map(ct => (
+                                        <button 
+                                            key={ct.id}
+                                            onClick={() => setChartType(ct.id)}
+                                            className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-all ${chartType === ct.id ? 'bg-brand-800 border-brand-gold text-white' : 'bg-[#0f172a] border-brand-700 text-gray-400 hover:border-gray-500'}`}
+                                        >
+                                            <span className="material-symbols-outlined text-sm">{ct.icon}</span> {ct.label}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="grid grid-cols-2 gap-3 mt-2">
+                                    <div>
+                                        <label className="text-[10px] text-gray-500 block mb-1">X-Axis Label</label>
+                                        <input 
+                                            type="text" 
+                                            value={xAxisLabel}
+                                            onChange={(e) => setXAxisLabel(e.target.value)}
+                                            placeholder="e.g. Years"
+                                            className="w-full bg-[#0f172a] border border-brand-700 rounded-lg px-2 py-1.5 text-xs text-white"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] text-gray-500 block mb-1">Y-Axis Label</label>
+                                        <input 
+                                            type="text" 
+                                            value={yAxisLabel}
+                                            onChange={(e) => setYAxisLabel(e.target.value)}
+                                            placeholder="e.g. Revenue"
+                                            className="w-full bg-[#0f172a] border border-brand-700 rounded-lg px-2 py-1.5 text-xs text-white"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
                         )}
                     </div>
 
@@ -412,18 +428,6 @@ export const InfographicStudio: React.FC = () => {
                                 </button>
                             ))}
                         </div>
-                        
-                        <button 
-                            onClick={() => setIncludeOverlay(!includeOverlay)}
-                            className={`w-full py-2 px-3 rounded-lg border flex items-center justify-between transition-all ${includeOverlay ? 'bg-brand-700 border-blue-400 text-white' : 'bg-brand-900 border-brand-800 text-gray-500'}`}
-                        >
-                            <span className="text-[10px] font-bold flex items-center gap-2">
-                                <span className="material-symbols-outlined text-sm">title</span> Auto-Caption Overlay
-                            </span>
-                            <div className={`w-8 h-4 rounded-full relative transition-colors ${includeOverlay ? 'bg-blue-500' : 'bg-gray-600'}`}>
-                                <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${includeOverlay ? 'left-4.5' : 'left-0.5'}`} style={{ left: includeOverlay ? 'calc(100% - 14px)' : '2px' }}></div>
-                            </div>
-                        </button>
                     </div>
 
                 </div>
@@ -443,7 +447,7 @@ export const InfographicStudio: React.FC = () => {
                         ) : (
                             <>
                                 <span className="material-symbols-outlined text-xl">auto_awesome_motion</span>
-                                Generate Visuals
+                                Generate Slides
                             </>
                         )}
                     </button>
@@ -466,9 +470,9 @@ export const InfographicStudio: React.FC = () => {
                         <div className="w-32 h-32 bg-gradient-to-br from-[#1e293b] to-[#0f172a] rounded-[2rem] flex items-center justify-center mb-8 border border-brand-700/50 shadow-2xl rotate-6 transform hover:rotate-3 transition-transform duration-700">
                             <span className="material-symbols-outlined text-7xl text-brand-gold/80 drop-shadow-lg">grid_view</span>
                         </div>
-                        <h3 className="text-3xl font-serif text-white mb-3 tracking-tight">Visual Knowledge Engine</h3>
+                        <h3 className="text-3xl font-serif text-white mb-3 tracking-tight">Presentation Engine</h3>
                         <p className="text-gray-400 max-w-sm text-sm leading-relaxed">
-                            Configure your visual narrative on the left, and watch your infographic deck materialize here.
+                            Configure your slide content on the left, and watch your deck materialize here.
                         </p>
                     </div>
                 ) : (
@@ -476,8 +480,8 @@ export const InfographicStudio: React.FC = () => {
                         <div className="sticky top-0 z-20 bg-[#0a0f1c]/80 backdrop-blur-md py-4 mb-6 flex justify-between items-center border-b border-brand-800">
                             <div>
                                 <h3 className="text-xl font-bold text-white flex items-center gap-3">
-                                    Generated Assets
-                                    <span className="px-2.5 py-0.5 rounded-full bg-brand-800 text-brand-gold text-xs font-mono border border-brand-700 shadow-inner">{items.length}</span>
+                                    Slide Deck
+                                    <span className="px-2.5 py-0.5 rounded-full bg-brand-800 text-brand-gold text-xs font-mono border border-brand-700 shadow-inner">{items.length} Slides</span>
                                 </h3>
                             </div>
                             <div className="flex gap-3">
@@ -485,75 +489,33 @@ export const InfographicStudio: React.FC = () => {
                                     <span className="material-symbols-outlined text-lg">slideshow</span> Present
                                 </button>
                                 <button onClick={handleExportPDF} className="bg-brand-accent hover:bg-brand-accent/80 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-colors shadow-lg hover:shadow-blue-500/20">
-                                    <span className="material-symbols-outlined text-lg">picture_as_pdf</span> Export Deck
+                                    <span className="material-symbols-outlined text-lg">picture_as_pdf</span> Export PDF
                                 </button>
                             </div>
                         </div>
                         
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 md:gap-8">
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 md:gap-12">
                             {items.map((item, idx) => (
                                 <div 
                                     key={item.id} 
                                     onClick={() => setSlideIndex(idx)}
-                                    className="bg-[#1e293b]/40 backdrop-blur-sm rounded-2xl overflow-hidden border border-brand-700/50 shadow-xl flex flex-col group hover:border-brand-500/50 hover:bg-[#1e293b]/60 transition-all duration-300 animate-fade-in-up hover:-translate-y-2 cursor-pointer relative" 
+                                    className="group cursor-pointer relative"
                                     style={{ animationDelay: `${idx * 100}ms` }}
                                 >
-                                    {/* Number Badge */}
-                                    <div className="absolute top-4 left-4 z-10 w-8 h-8 rounded-full bg-black/40 backdrop-blur border border-white/10 flex items-center justify-center text-xs font-bold text-white shadow-lg pointer-events-none">
-                                        {idx + 1}
+                                    {/* Slide Container - Scaled Down for Grid */}
+                                    <div className="transform transition-transform duration-300 group-hover:scale-[1.02] shadow-2xl rounded-lg overflow-hidden border border-brand-700/50">
+                                        {renderSlide(item, idx, true)}
                                     </div>
-
-                                    {/* Image Container */}
-                                    <div className={`bg-black/20 relative overflow-hidden ${item.aspectRatio === '9:16' ? 'aspect-[9/16]' : item.aspectRatio === '16:9' ? 'aspect-video' : item.aspectRatio === '1:1' ? 'aspect-square' : 'aspect-[4/3]'}`}>
-                                        {item.status === 'done' && item.imageData ? (
-                                            <>
-                                                <img src={item.imageData} alt={item.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
-                                                
-                                                {/* Desktop Overlay Actions */}
-                                                <div className="hidden md:flex absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity items-center justify-center gap-3 backdrop-blur-[2px]">
-                                                    <button 
-                                                        onClick={(e) => handleRegenerate(e, item)}
-                                                        className="h-10 w-10 bg-white/10 text-white border border-white/20 rounded-full hover:bg-white hover:text-black hover:scale-110 transition-all shadow-lg flex items-center justify-center backdrop-blur-md"
-                                                        title="Regenerate This Tile"
-                                                    >
-                                                        <span className="material-symbols-outlined text-xl">refresh</span>
-                                                    </button>
-                                                    <button 
-                                                        onClick={(e) => handleDownload(e, item)}
-                                                        className="h-10 w-10 bg-white/10 text-white border border-white/20 rounded-full hover:bg-white hover:text-black hover:scale-110 transition-all shadow-lg flex items-center justify-center backdrop-blur-md"
-                                                        title="Download"
-                                                    >
-                                                        <span className="material-symbols-outlined text-xl">download</span>
-                                                    </button>
-                                                </div>
-                                            </>
-                                        ) : item.status === 'failed' ? (
-                                            <div className="w-full h-full flex flex-col items-center justify-center text-red-400 p-4 text-center bg-red-900/10">
-                                                <span className="material-symbols-outlined text-3xl mb-2 opacity-50">broken_image</span>
-                                                <p className="text-xs font-medium">Generation Failed</p>
-                                                <button onClick={(e) => handleRegenerate(e, item)} className="mt-2 text-[10px] underline hover:text-white">Retry</button>
-                                            </div>
-                                        ) : (
-                                            <div className="w-full h-full flex flex-col items-center justify-center text-brand-gold bg-[#0a0f1c]">
-                                                <div className="w-12 h-12 border-4 border-brand-800 border-t-brand-gold rounded-full animate-spin mb-4"></div>
-                                                <p className="text-[10px] uppercase tracking-widest animate-pulse font-bold text-brand-gold">Rendering...</p>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Card Content */}
-                                    <div className="p-5 flex-1 flex flex-col relative border-t border-white/5">
-                                        <h4 className="text-base font-bold text-white mb-2 leading-tight pr-4 group-hover:text-brand-gold transition-colors">{item.title}</h4>
-                                        <p className="text-xs text-gray-400 leading-relaxed flex-1 line-clamp-3 group-hover:line-clamp-none transition-all duration-300">{item.summary}</p>
-                                        
-                                        {/* Footer / Mobile Actions */}
-                                        <div className="mt-4 pt-3 border-t border-white/5 flex justify-between items-center opacity-70 md:opacity-50 group-hover:opacity-100 transition-opacity">
-                                             <span className="text-[10px] font-mono text-gray-500 uppercase">Nano Banana Pro</span>
-                                             <span className="flex gap-2">
-                                                <span className="material-symbols-outlined text-gray-400 text-sm md:hidden">open_in_full</span>
-                                                <span className="material-symbols-outlined text-gray-500 text-sm hidden md:block">open_in_full</span>
-                                             </span>
-                                        </div>
+                                    
+                                    {/* Hover Actions */}
+                                    <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+                                        <button 
+                                            onClick={(e) => handleRegenerate(e, item)}
+                                            className="bg-black/70 hover:bg-brand-accent text-white p-2 rounded-full backdrop-blur-md"
+                                            title="Regenerate Visual"
+                                        >
+                                            <span className="material-symbols-outlined text-lg">refresh</span>
+                                        </button>
                                     </div>
                                 </div>
                             ))}
@@ -562,99 +524,45 @@ export const InfographicStudio: React.FC = () => {
                 )}
             </div>
 
-            {/* Slide/Presentation Modal */}
+            {/* Presentation Modal */}
             {slideIndex !== null && items[slideIndex] && (
                 <div className="fixed inset-0 z-50 bg-[#0a0f1c]/95 backdrop-blur-xl flex flex-col animate-fade-in">
-                    {/* Slide Header */}
                     <div className="flex justify-between items-center p-4 border-b border-white/10 bg-black/20 flex-shrink-0">
                         <div className="flex items-center gap-4">
                             <span className="text-white font-bold text-lg font-mono">
-                                {String(slideIndex + 1).padStart(2, '0')} <span className="text-gray-600 font-normal">/ {String(items.length).padStart(2, '0')}</span>
+                                Slide {String(slideIndex + 1).padStart(2, '0')}
                             </span>
-                            <h3 className="text-gray-300 text-sm hidden md:block border-l border-white/20 pl-4 font-medium tracking-wide">{items[slideIndex].title}</h3>
                         </div>
-                        <div className="flex items-center gap-3">
-                             <button 
-                                onClick={(e) => handleRegenerate(e, items[slideIndex])} 
-                                className="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition-colors"
-                                title="Regenerate"
-                            >
-                                <span className="material-symbols-outlined text-xl">refresh</span>
-                            </button>
-                             <button 
-                                onClick={(e) => handleDownload(e, items[slideIndex])} 
-                                className="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition-colors"
-                                title="Download Image"
-                            >
-                                <span className="material-symbols-outlined text-xl">download</span>
-                            </button>
-                            <button 
-                                onClick={() => setSlideIndex(null)} 
-                                className="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition-colors"
-                            >
-                                <span className="material-symbols-outlined text-2xl">close</span>
-                            </button>
-                        </div>
+                        <button 
+                            onClick={() => setSlideIndex(null)} 
+                            className="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition-colors"
+                        >
+                            <span className="material-symbols-outlined text-2xl">close</span>
+                        </button>
                     </div>
 
-                    {/* Main Slide Content */}
-                    <div className="flex-1 relative flex items-center justify-center p-4 md:p-10 overflow-hidden">
+                    <div className="flex-1 flex items-center justify-center p-4 md:p-8 overflow-hidden relative">
                         {/* Navigation Arrows */}
                         <button 
                             onClick={(e) => { e.stopPropagation(); setSlideIndex(prev => prev !== null && prev > 0 ? prev - 1 : prev)}}
                             disabled={slideIndex === 0}
-                            className="absolute left-2 md:left-8 top-1/2 -translate-y-1/2 w-12 h-12 md:w-14 md:h-14 flex items-center justify-center rounded-full bg-black/40 hover:bg-brand-accent text-white disabled:opacity-0 disabled:pointer-events-none transition-all border border-white/10 backdrop-blur-md z-20 group hover:scale-110 active:scale-90"
+                            className="absolute left-4 top-1/2 -translate-y-1/2 w-14 h-14 flex items-center justify-center rounded-full bg-black/20 hover:bg-brand-accent text-white disabled:opacity-0 transition-all z-20"
                         >
-                            <span className="material-symbols-outlined text-3xl md:text-4xl group-hover:-translate-x-1 transition-transform">chevron_left</span>
+                            <span className="material-symbols-outlined text-4xl">chevron_left</span>
                         </button>
                         
                         <button 
                             onClick={(e) => { e.stopPropagation(); setSlideIndex(prev => prev !== null && prev < items.length - 1 ? prev + 1 : prev)}}
                             disabled={slideIndex === items.length - 1}
-                            className="absolute right-2 md:right-8 top-1/2 -translate-y-1/2 w-12 h-12 md:w-14 md:h-14 flex items-center justify-center rounded-full bg-black/40 hover:bg-brand-accent text-white disabled:opacity-0 disabled:pointer-events-none transition-all border border-white/10 backdrop-blur-md z-20 group hover:scale-110 active:scale-90"
+                            className="absolute right-4 top-1/2 -translate-y-1/2 w-14 h-14 flex items-center justify-center rounded-full bg-black/20 hover:bg-brand-accent text-white disabled:opacity-0 transition-all z-20"
                         >
-                            <span className="material-symbols-outlined text-3xl md:text-4xl group-hover:translate-x-1 transition-transform">chevron_right</span>
+                            <span className="material-symbols-outlined text-4xl">chevron_right</span>
                         </button>
 
-                        {/* Image Wrapper with Animation Key */}
-                        <div key={slideIndex} className="relative w-full h-full flex flex-col items-center justify-center animate-fade-in transform transition-all duration-300">
-                            {items[slideIndex].status === 'done' && items[slideIndex].imageData ? (
-                                <img 
-                                    src={items[slideIndex].imageData} 
-                                    alt={items[slideIndex].title} 
-                                    className="max-h-[70vh] w-auto max-w-full md:max-w-[90vw] object-contain shadow-2xl rounded-lg border border-white/5"
-                                />
-                            ) : (
-                                <div className="w-64 h-64 flex items-center justify-center bg-white/5 rounded-2xl">
-                                     <span className="w-10 h-10 border-4 border-brand-accent border-t-transparent rounded-full animate-spin"></span>
-                                </div>
-                            )}
-                            
-                            {/* Caption Overlay */}
-                            <div className="mt-6 md:mt-8 max-w-3xl text-center px-4">
-                                <h2 className="text-xl md:text-3xl font-bold text-white mb-2 md:mb-3 font-serif">{items[slideIndex].title}</h2>
-                                <p className="text-gray-400 text-sm md:text-lg leading-relaxed font-light line-clamp-3 md:line-clamp-none" onClick={(e) => e.currentTarget.classList.toggle('line-clamp-3')}>{items[slideIndex].summary}</p>
-                            </div>
+                        {/* Full Size Slide */}
+                        <div className="max-w-[90vw] max-h-[85vh] aspect-video shadow-2xl rounded-xl overflow-hidden">
+                            {renderSlide(items[slideIndex], slideIndex, false)}
                         </div>
-                    </div>
-
-                    {/* Filmstrip Thumbnails */}
-                    <div className="h-20 md:h-24 border-t border-white/10 bg-black/40 flex items-center justify-center gap-3 p-3 overflow-x-auto flex-shrink-0 backdrop-blur-md">
-                        {items.map((item, idx) => (
-                            <button 
-                                key={item.id}
-                                onClick={() => setSlideIndex(idx)}
-                                className={`h-full aspect-square rounded-lg overflow-hidden border-2 transition-all relative flex-shrink-0 ${slideIndex === idx ? 'border-brand-gold ring-2 ring-brand-gold/20 opacity-100 scale-105' : 'border-transparent opacity-40 hover:opacity-80 hover:scale-105'}`}
-                            >
-                                {item.imageData ? (
-                                    <img src={item.imageData} alt="" className="w-full h-full object-cover" />
-                                ) : (
-                                    <div className="w-full h-full bg-gray-800 flex items-center justify-center">
-                                        <span className="material-symbols-outlined text-xs text-gray-500">image</span>
-                                    </div>
-                                )}
-                            </button>
-                        ))}
                     </div>
                 </div>
             )}

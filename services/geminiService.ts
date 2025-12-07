@@ -149,41 +149,52 @@ export const generateImageVariations = async (prompt: string, aspectRatio: strin
 
 /**
  * Edits an image based on a text prompt using gemini-2.5-flash-image (Nano Banana).
- * Accepts File or Base64 string.
+ * Accepts File, Base64 string, or Array of them.
  */
-export const editImage = async (imageInput: File | string, prompt: string, aspectRatio: string = "1:1"): Promise<string> => {
-  let base64Data = "";
-  let mimeType = "image/png";
-
-  if (imageInput instanceof File) {
-    base64Data = await fileToGenerativePart(imageInput);
-    mimeType = imageInput.type;
+export const editImage = async (imageInput: File | string | (File|string)[], prompt: string, aspectRatio: string = "1:1"): Promise<string> => {
+  let inputs: (File|string)[] = [];
+  if (Array.isArray(imageInput)) {
+      inputs = imageInput;
   } else {
-    // Handle base64 string
-    const match = imageInput.match(/^data:(.*?);base64,(.*)$/);
-    if (match) {
-        mimeType = match[1];
-        base64Data = match[2];
-    } else {
-        base64Data = imageInput; // Assume raw base64 if no prefix
-    }
+      inputs = [imageInput];
   }
+
+  // Convert all inputs to base64 parts
+  const parts: any[] = [];
+  
+  for (const input of inputs) {
+      let base64Data = "";
+      let mimeType = "image/png";
+
+      if (input instanceof File) {
+        base64Data = await fileToGenerativePart(input);
+        mimeType = input.type;
+      } else {
+        const match = input.match(/^data:(.*?);base64,(.*)$/);
+        if (match) {
+            mimeType = match[1];
+            base64Data = match[2];
+        } else {
+            base64Data = input;
+        }
+      }
+      
+      parts.push({
+          inlineData: {
+              data: base64Data,
+              mimeType: mimeType
+          }
+      });
+  }
+
+  // Add the text prompt
+  parts.push({ text: `Edit/Generate based on these images: ${prompt}` });
 
   try {
     const response: GenerateContentResponse = await ai.models.generateContent({
       model: "gemini-2.5-flash-image",
       contents: {
-        parts: [
-          {
-            inlineData: {
-              data: base64Data,
-              mimeType: mimeType,
-            },
-          },
-          {
-            text: `Edit this image: ${prompt}`,
-          },
-        ],
+        parts: parts,
       },
       config: {
         imageConfig: {
@@ -210,7 +221,7 @@ export const editImage = async (imageInput: File | string, prompt: string, aspec
 /**
  * Edits multiple image variations in parallel.
  */
-export const editImageVariations = async (imageInput: File | string, prompt: string, aspectRatio: string = "1:1", count: number = 4): Promise<string[]> => {
+export const editImageVariations = async (imageInput: File | string | (File|string)[], prompt: string, aspectRatio: string = "1:1", count: number = 4): Promise<string[]> => {
   const promises = Array.from({ length: count }, () => editImage(imageInput, prompt, aspectRatio));
   
   const results = await Promise.allSettled(promises);
@@ -226,44 +237,69 @@ export const editImageVariations = async (imageInput: File | string, prompt: str
  return successful;
 }
 
+interface ChartOptions {
+    isChart: boolean;
+    chartType?: string;
+    xAxisLabel?: string;
+    yAxisLabel?: string;
+}
+
 /**
  * Analyzes text content and structures it into infographic sections.
  */
-export const structureInfographicData = async (text: string, style: string): Promise<InfographicItem[]> => {
-  const prompt = `
+export const structureInfographicData = async (text: string, style: string, chartOptions?: ChartOptions): Promise<InfographicItem[]> => {
+  const isChartMode = chartOptions?.isChart;
+  
+  let prompt = `
   ROLE: Elite Data Visualization Architect & Information Designer.
   
-  OBJECTIVE: Transform the input text into a coherent visual narrative consisting of 4-8 high-fidelity infographic tiles.
+  OBJECTIVE: Transform the input text into a coherent visual narrative consisting of 4-8 slides/tiles.
   
   INPUT CONTEXT:
   """${text.slice(0, 15000)}"""
 
   DESIGN AESTHETIC: ${style}
+  `;
 
-  INSTRUCTIONS:
-  1.  **Deconstruct**: Identify the core narrative arc. Is it a linear process, a cycle, a comparison, or a network?
-  2.  **Select Concepts**: Choose 4-8 key distinct data points or concepts.
-  3.  **Map Relationships**: For each concept, define how it visually relates to the whole.
-      - *Hierarchy*: Is this a parent, child, or peer node?
-      - *Flow*: Does data flow into or out of this?
-  4.  **Visualize**: Design a complex visual representation for Nano Banana Pro. Avoid generic icons. Use specific metaphors:
-      -   *Network*: "Glowing fiber-optic cables connecting distinct nodes."
-      -   *Layers*: "Geological cross-section showing strata of data."
-      -   *Growth*: "Organic roots spreading into a digital lattice."
-      -   *Scale*: "Macro lens view of a single component vs. wide shot of the system."
+  if (isChartMode) {
+      prompt += `
+      MODE: DATA VISUALIZATION (CHARTS)
+      Constraint: The user wants to generate ${chartOptions?.chartType || 'Bar'} charts.
+      Axis Context: X-Axis should relate to "${chartOptions?.xAxisLabel || 'Categories'}", Y-Axis should relate to "${chartOptions?.yAxisLabel || 'Values'}".
 
-  VISUAL PROMPT ENGINEERING (for Nano Banana Pro):
-  -   **Composition**: Define the camera angle (e.g., "Isometric 45-degree", "Top-down blueprint", "Cinematic low-angle").
-  -   **Lighting & Atmosphere**: "Volumetric fog", "Studio rim lighting", "Bioluminescent pulses".
-  -   **Materiality**: "Glassmorphism", "Brushed titanium", "Hand-drawn ink on parchment".
-  -   **Complexity**: "Hyper-detailed", "Intricate circuitry", "Data-dense HUD".
-  -   **Text Handling**: Describe text as "abstract holographic labels", "floating UI widgets", or "alien glyphs" (AI cannot render readable text).
+      INSTRUCTIONS:
+      1. Extract numerical data or comparetative concepts from the text.
+      2. If exact numbers aren't present, estimate plausible representative values based on the context to create a meaningful chart.
+      3. Create 4-6 distinct charts that explain different aspects of the text.
+      
+      VISUAL PROMPT ENGINEERING (for Chart Generation):
+      - Create a specific prompt to generate a high-quality ${chartOptions?.chartType} chart.
+      - Describe the data points clearly (e.g., "A bar chart showing revenue growth: Q1 10%, Q2 15%...").
+      - Specify the visual style: "Clean, minimal vector art, dark background, neon accents" (matching the Design Aesthetic).
+      - Ensure the prompt asks for clear axis representations.
+      `;
+  } else {
+      prompt += `
+      INSTRUCTIONS:
+      1.  **Deconstruct**: Identify the core narrative arc. Is it a linear process, a cycle, a comparison, or a network?
+      2.  **Select Concepts**: Choose 4-8 key distinct data points or concepts.
+      3.  **Map Relationships**: For each concept, define how it visually relates to the whole.
+      4.  **Visualize**: Design a complex visual representation for Nano Banana Pro. Avoid generic icons. Use specific metaphors.
 
+      VISUAL PROMPT ENGINEERING (for Nano Banana Pro):
+      -   **Composition**: Define the camera angle (e.g., "Isometric 45-degree", "Top-down blueprint", "Cinematic low-angle").
+      -   **Lighting & Atmosphere**: "Volumetric fog", "Studio rim lighting", "Bioluminescent pulses".
+      -   **Materiality**: "Glassmorphism", "Brushed titanium", "Hand-drawn ink on parchment".
+      -   **Complexity**: "Hyper-detailed", "Intricate circuitry", "Data-dense HUD".
+      `;
+  }
+
+  prompt += `
   OUTPUT SCHEMA (JSON):
   Return a JSON object with a property "tiles" which is an array of objects.
   Each object has: 
   - "title": Short title of the section.
-  - "summary": 1-2 sentence explanation.
+  - "summary": 1-2 sentence explanation/bullet points.
   - "visualPrompt": The highly detailed image generation prompt.
   `;
 
@@ -304,7 +340,9 @@ export const structureInfographicData = async (text: string, style: string): Pro
         title: t.title,
         summary: t.summary,
         visualPrompt: t.visualPrompt,
-        status: 'pending'
+        status: 'pending',
+        isChart: isChartMode,
+        chartType: chartOptions?.chartType
     }));
 
   } catch (e) {
@@ -342,20 +380,26 @@ export const sendChatMessage = async (
     history: {role: string, parts: {text?: string, inlineData?: {mimeType: string, data: string}}[]}[], 
     newMessage: string,
     model: string = "gemini-2.5-flash",
-    attachmentBase64?: string
+    attachmentsBase64?: string[] // Changed to support multiple images
 ): Promise<{ text: string, generatedImage?: string }> => {
   
-  // If user provides an image, we MUST use gemini-3-pro-preview for analysis as per requirements.
-  const effectiveModel = attachmentBase64 ? "gemini-3-pro-preview" : model;
+  // If user provides images, we MUST use gemini-3-pro-preview for analysis.
+  const hasAttachments = attachmentsBase64 && attachmentsBase64.length > 0;
+  const effectiveModel = hasAttachments ? "gemini-3-pro-preview" : model;
   
   // Construct the current message contents
   const currentParts: any[] = [{ text: newMessage }];
-  if (attachmentBase64) {
-      currentParts.push({
-          inlineData: {
-              mimeType: "image/jpeg", // Assuming JPEG for simplicity, or detect from data URI
-              data: attachmentBase64.split(',')[1] || attachmentBase64
-          }
+  
+  if (hasAttachments) {
+      attachmentsBase64.forEach(att => {
+          // Robust detection for base64
+          const cleanData = att.includes(',') ? att.split(',')[1] : att;
+          currentParts.push({
+              inlineData: {
+                  mimeType: "image/jpeg", 
+                  data: cleanData
+              }
+          });
       });
   }
 
@@ -368,7 +412,7 @@ export const sendChatMessage = async (
   YOUR CAPABILITIES:
   1. STORYTELLING: You are a master storyteller. You don't just summarize; you write prose, dialogue, and narrative depth. You understand pacing, tone, and character voice.
   2. VISUALIZATION: You can generate images. If a user asks to "draw", "create", "generate", or "visualize" something, ALWAYS use the \`generate_image\` tool.
-  3. ANALYSIS: You can analyze text and uploaded images (if provided) to give creative feedback.
+  3. ANALYSIS: You can analyze text and multiple uploaded images (if provided) to give creative feedback.
   
   GUIDELINES:
   - When writing stories, aim for literary quality unless asked otherwise. Use "Show, Don't Tell".

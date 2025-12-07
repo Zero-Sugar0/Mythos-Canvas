@@ -18,12 +18,12 @@ const SUGGESTIONS = {
     { label: "Noir Detective", prompt: "Black and white noir style, detective standing in the rain, dramatic shadows, cinematic composition, mystery atmosphere." }
   ],
   EDIT: [
+    { label: "Style Transfer", prompt: "Transform these reference images into a cohesive oil painting." },
+    { label: "Combine Elements", prompt: "Merge the elements of these images into a single surreal composition." },
     { label: "Cyberpunk Filter", prompt: "Make it look like a cyberpunk scene with neon lights and glitch effects." },
     { label: "Watercolor", prompt: "Transform into a watercolor painting style." },
     { label: "Pencil Sketch", prompt: "Convert to a detailed pencil sketch." },
-    { label: "Remove Background", prompt: "Remove the background and replace it with a white studio backdrop." },
-    { label: "Add Snow", prompt: "Add heavy snowfall and winter atmosphere." },
-    { label: "Golden Hour", prompt: "Change the lighting to a warm golden hour sunset." }
+    { label: "Remove Background", prompt: "Remove the background and replace it with a white studio backdrop." }
   ]
 };
 
@@ -37,8 +37,8 @@ const ASPECT_RATIOS = [
 
 export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
   const [mode, setMode] = useState<StudioMode>('CREATE');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [sessionUploads, setSessionUploads] = useState<string[]>([]); // All uploads in current session
+  const [activeImages, setActiveImages] = useState<string[]>([]); // Currently selected images for processing
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [resultImage, setResultImage] = useState<string | null>(null);
@@ -47,7 +47,7 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
   const [gallery, setGallery] = useState<ImageHistoryItem[]>([]);
   const [aspectRatio, setAspectRatio] = useState('1:1');
   
-  // Advanced Editing State
+  // Advanced Editing State (Applies to primary image if multiple)
   const [adjustments, setAdjustments] = useState({ brightness: 100, contrast: 100, saturation: 100 });
 
   // Delete Confirmation State
@@ -86,13 +86,12 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
 
   const resetAdjustments = () => setAdjustments({ brightness: 100, contrast: 100, saturation: 100 });
 
-  // Reset adjustments when a new file is selected
+  // Reset adjustments when active images change
   useEffect(() => {
       resetAdjustments();
-  }, [selectedFile, previewUrl]);
+  }, [activeImages]);
 
   const saveToGallery = (imageData: string, usedPrompt: string, usedMode: StudioMode) => {
-      // Check if duplicate (simple check)
       if (gallery.some(g => g.imageData === imageData)) return;
 
       const newItem: ImageHistoryItem = {
@@ -105,7 +104,6 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
       };
       
       const newGallery = [newItem, ...gallery];
-      // Limit to 20 images to prevent localStorage quota issues
       if (newGallery.length > 20) newGallery.pop();
       
       setGallery(newGallery);
@@ -137,11 +135,10 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
       setVariations([]);
       if (item.aspectRatio) setAspectRatio(item.aspectRatio);
       
-      // If we are loading an EDIT mode item, we likely want to continue editing it (chaining).
-      // Or if the user wants to refine the previous output.
+      // If loading for EDIT, set as active image
       if (item.mode === 'EDIT') {
-          setPreviewUrl(item.imageData);
-          setSelectedFile(null);
+          setActiveImages([item.imageData]);
+          setSessionUploads(prev => prev.includes(item.imageData) ? prev : [...prev, item.imageData]);
       }
 
       window.scrollTo(0, 0);
@@ -149,39 +146,56 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
   
   const handleRefine = (e: React.MouseEvent, item: ImageHistoryItem) => {
       e.stopPropagation();
-      // Refine/Remix Flow
       setMode('EDIT');
       setPrompt(item.prompt);
-      setPreviewUrl(item.imageData);
-      setSelectedFile(null); // Clear file as we are using base64
+      setActiveImages([item.imageData]);
+      setSessionUploads(prev => prev.includes(item.imageData) ? prev : [...prev, item.imageData]);
       if (item.aspectRatio) setAspectRatio(item.aspectRatio);
       resetAdjustments();
-      // Scroll to input
       window.scrollTo(0, 0);
   }
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files && event.target.files[0]) {
-      const file = event.target.files[0];
-      setSelectedFile(file);
-      const reader = new FileReader();
-      reader.onload = (e) => setPreviewUrl(e.target?.result as string);
-      reader.readAsDataURL(file);
+    if (event.target.files) {
+      const files = Array.from(event.target.files) as File[];
+      files.forEach(file => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+              const res = e.target?.result as string;
+              // Add to session uploads
+              setSessionUploads(prev => [...prev, res]);
+              // Add to active images (selecting newly uploaded ones automatically)
+              setActiveImages(prev => [...prev, res]);
+          };
+          reader.readAsDataURL(file);
+      });
       setResultImage(null);
       setVariations([]);
     }
   };
 
-  // Generate a processed base64 string including CSS filters if applied
-  const getProcessedImage = async (): Promise<string> => {
-      if (!previewUrl) return "";
+  const toggleSessionImage = (url: string) => {
+      setActiveImages(prev => {
+          if (prev.includes(url)) {
+              return prev.filter(img => img !== url);
+          } else {
+              return [...prev, url];
+          }
+      });
+      setResultImage(null);
+  };
+
+  // Process images through canvas if adjustments are non-default
+  const getProcessedImages = async (): Promise<string[]> => {
+      if (activeImages.length === 0) return [];
       
-      // If default adjustments, return original
+      // If default adjustments, return originals
       if (adjustments.brightness === 100 && adjustments.contrast === 100 && adjustments.saturation === 100) {
-          return previewUrl;
+          return activeImages;
       }
 
-      return new Promise((resolve) => {
+      // Apply adjustments to all active images
+      const processedPromises = activeImages.map(imgUrl => new Promise<string>((resolve) => {
           const img = new Image();
           img.crossOrigin = "Anonymous";
           img.onload = () => {
@@ -193,20 +207,21 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
                   // Apply filters
                   ctx.filter = `brightness(${adjustments.brightness}%) contrast(${adjustments.contrast}%) saturate(${adjustments.saturation}%)`;
                   ctx.drawImage(img, 0, 0, img.width, img.height);
-                  // Return base64
-                  resolve(canvas.toDataURL(selectedFile?.type || 'image/png'));
+                  resolve(canvas.toDataURL('image/png'));
               } else {
-                  resolve(previewUrl);
+                  resolve(imgUrl);
               }
           };
-          img.onerror = () => resolve(previewUrl);
-          img.src = previewUrl;
-      });
+          img.onerror = () => resolve(imgUrl);
+          img.src = imgUrl;
+      }));
+
+      return Promise.all(processedPromises);
   };
 
   const handleAction = async () => {
     if (!prompt) return;
-    if (mode === 'EDIT' && !previewUrl) return;
+    if (mode === 'EDIT' && activeImages.length === 0) return;
     
     setIsGenerating(true);
     setResultImage(null);
@@ -223,13 +238,12 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
             results = [single];
         }
       } else {
-        // Prepare image (File or Base64 from Canvas)
-        const imageToProcess = await getProcessedImage();
+        const imagesToProcess = await getProcessedImages();
 
         if (variationCount > 1) {
-            results = await editImageVariations(imageToProcess, prompt, aspectRatio, variationCount);
+            results = await editImageVariations(imagesToProcess, prompt, aspectRatio, variationCount);
         } else {
-            const single = await editImage(imageToProcess, prompt, aspectRatio);
+            const single = await editImage(imagesToProcess, prompt, aspectRatio);
             results = [single];
         }
       }
@@ -238,7 +252,6 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
       if (results.length > 1) {
           setVariations(results);
       }
-      // Auto-save the first result
       saveToGallery(results[0], prompt, mode);
     } catch (error) {
       alert(`Failed to ${mode === 'CREATE' ? 'generate' : 'process'} image. Please try again.`);
@@ -247,7 +260,7 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
     }
   };
 
-  // Zoom/Pan Handlers
+  // Zoom/Pan Handlers (Unchanged)
   const handleMouseDown = (e: React.MouseEvent) => {
     if (zoom > 1) {
         e.preventDefault();
@@ -320,7 +333,7 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
       <div className="flex justify-center mb-6 md:mb-8">
         <div className="bg-brand-800 p-1 rounded-full border border-brand-700 flex">
             <button 
-                onClick={() => { setMode('CREATE'); setResultImage(null); setVariations([]); }}
+                onClick={() => { setMode('CREATE'); setResultImage(null); setVariations([]); setActiveImages([]); }}
                 className={`px-4 py-2 md:px-6 md:py-2 rounded-full text-xs md:text-sm font-bold transition-all flex items-center gap-1 md:gap-2 ${mode === 'CREATE' ? 'bg-brand-accent text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
             >
                 <span className="material-symbols-outlined text-base md:text-sm">brush</span> Create
@@ -338,38 +351,78 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
         {/* Input Section */}
         <div className="bg-brand-800 p-4 md:p-6 rounded-2xl border border-brand-700 h-fit">
             <h3 className="text-lg md:text-xl font-medium text-white mb-4">
-                {mode === 'CREATE' ? 'Describe your vision' : 'Source & Instruction'}
+                {mode === 'CREATE' ? 'Describe your vision' : 'Source Images & References'}
             </h3>
             
             {mode === 'EDIT' && (
                 <div className="mb-6 space-y-4">
-                    {/* Image Preview & Upload */}
-                    <div className="border-2 border-dashed border-brand-700 rounded-xl h-48 md:h-64 flex flex-col items-center justify-center bg-brand-900/50 hover:border-brand-accent transition-colors relative overflow-hidden group">
-                        {previewUrl ? (
-                            <img 
-                                src={previewUrl} 
-                                alt="Preview" 
-                                className="h-full w-full object-contain"
-                                style={{
-                                    filter: `brightness(${adjustments.brightness}%) contrast(${adjustments.contrast}%) saturate(${adjustments.saturation}%)`
-                                }} 
-                            />
+                    {/* Session Tray - Multiple Image Switching */}
+                    {sessionUploads.length > 0 && (
+                        <div className="space-y-2">
+                            <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold flex justify-between items-center">
+                                <span>Uploads ({sessionUploads.length})</span>
+                                <span className="text-brand-accent">{activeImages.length} Active</span>
+                            </p>
+                            <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
+                                {sessionUploads.map((src, idx) => {
+                                    const isActive = activeImages.includes(src);
+                                    return (
+                                        <button
+                                            key={idx}
+                                            onClick={() => toggleSessionImage(src)}
+                                            className={`relative flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all group ${isActive ? 'border-brand-gold ring-2 ring-brand-gold/30 opacity-100' : 'border-gray-700 opacity-60 hover:opacity-80'}`}
+                                        >
+                                            <img src={src} alt={`Session ${idx}`} className="w-full h-full object-cover" />
+                                            {isActive && (
+                                                <div className="absolute top-0.5 right-0.5 bg-brand-gold text-brand-900 rounded-full p-[2px]">
+                                                    <span className="material-symbols-outlined text-[10px] font-bold block">check</span>
+                                                </div>
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Image Preview Area */}
+                    <div className="border-2 border-dashed border-brand-700 rounded-xl min-h-[192px] max-h-[300px] flex flex-col items-center justify-center bg-brand-900/50 hover:border-brand-accent transition-colors relative overflow-hidden group">
+                        {activeImages.length > 0 ? (
+                            <div className={`w-full h-full p-2 grid gap-2 ${activeImages.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                                {activeImages.map((src, i) => (
+                                    <div key={i} className="relative rounded-lg overflow-hidden border border-gray-700 bg-black/40 h-full max-h-[200px] flex items-center justify-center">
+                                        <img 
+                                            src={src} 
+                                            alt={`Active ${i}`} 
+                                            className="max-w-full max-h-full object-contain"
+                                            style={{
+                                                filter: `brightness(${adjustments.brightness}%) contrast(${adjustments.contrast}%) saturate(${adjustments.saturation}%)`
+                                            }}
+                                        />
+                                        {activeImages.length > 1 && (
+                                            <div className="absolute top-1 left-1 bg-black/60 px-1.5 py-0.5 rounded text-[10px] text-white">#{i+1}</div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
                         ) : (
                             <div className="text-center p-6 pointer-events-none">
                                 <span className="material-symbols-outlined text-4xl text-gray-500 mb-2">upload_file</span>
-                                <p className="text-xs md:text-sm text-gray-400">Click to upload or drag & drop</p>
+                                <p className="text-xs md:text-sm text-gray-400">Click or drag images to upload frames/references</p>
                             </div>
                         )}
                         <input 
                             type="file" 
                             accept="image/*"
+                            multiple 
                             onChange={handleFileSelect}
                             className="absolute inset-0 opacity-0 cursor-pointer" 
+                            title="Upload images"
                         />
                     </div>
 
                     {/* Advanced Adjustments Sliders */}
-                    {previewUrl && (
+                    {activeImages.length > 0 && (
                         <div className="bg-brand-900/50 p-4 rounded-xl border border-brand-700/50">
                             <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-3 flex items-center gap-1">
                                 <span className="material-symbols-outlined text-xs">tune</span> Adjustment Tools
@@ -415,7 +468,7 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
                 <textarea
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
-                    placeholder={mode === 'CREATE' ? "A futuristic cyberpunk city with neon lights..." : "Add a retro filter, Remove background..."}
+                    placeholder={mode === 'CREATE' ? "A futuristic cyberpunk city with neon lights..." : "Merge these images into a cohesive scene..."}
                     className="w-full bg-brand-900 border border-brand-700 rounded-lg px-3 py-3 md:px-4 text-white text-sm md:text-base focus:outline-none focus:border-brand-accent resize-none h-24 md:h-32"
                 />
                 
@@ -488,7 +541,7 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
                 
                 <button
                     onClick={handleAction}
-                    disabled={(!prompt || (mode === 'EDIT' && !previewUrl) || isGenerating)}
+                    disabled={(!prompt || (mode === 'EDIT' && activeImages.length === 0) || isGenerating)}
                     className="w-full mt-2 bg-brand-accent hover:bg-indigo-500 disabled:opacity-50 text-white px-4 py-3 md:px-6 md:py-4 rounded-xl font-bold transition-colors flex items-center justify-center gap-2 shadow-lg text-sm md:text-base active:scale-95 transform duration-150"
                 >
                     {isGenerating ? (
@@ -499,7 +552,7 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
                     ) : (
                         <>
                             <span className="material-symbols-outlined">{mode === 'CREATE' ? 'auto_awesome' : 'auto_fix_high'}</span>
-                            {mode === 'CREATE' ? 'Generate Art' : 'Transform Image'}
+                            {mode === 'CREATE' ? 'Generate Art' : 'Process Images'}
                         </>
                     )}
                 </button>
@@ -515,8 +568,8 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
                          <button 
                             onClick={() => {
                                 setMode('EDIT');
-                                setPreviewUrl(resultImage);
-                                setSelectedFile(null);
+                                setActiveImages([resultImage]);
+                                setSessionUploads(prev => prev.includes(resultImage!) ? prev : [...prev, resultImage!]);
                                 window.scrollTo(0,0);
                             }}
                             className="text-xs flex items-center gap-1 text-gray-400 hover:text-white transition-colors bg-brand-700 px-3 py-1.5 rounded-lg border border-brand-600"

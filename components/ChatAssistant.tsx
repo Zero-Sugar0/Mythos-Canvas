@@ -248,7 +248,7 @@ export const ChatSection: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   
   const [input, setInput] = useState('');
-  const [attachment, setAttachment] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<string[]>([]); // Changed to array
   const [isLoading, setIsLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 768);
   const [isFastMode, setIsFastMode] = useState(false); 
@@ -288,7 +288,7 @@ export const ChatSection: React.FC = () => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, isLoading, attachment]);
+  }, [messages, isLoading, attachments.length]);
 
   // Reset feedback map when session changes
   useEffect(() => {
@@ -307,7 +307,7 @@ export const ChatSection: React.FC = () => {
       const id = Date.now().toString();
       const title = firstMessage.text.length > 30 
         ? firstMessage.text.substring(0, 30) + '...' 
-        : (firstMessage.attachment ? 'Image Analysis' : firstMessage.text);
+        : (firstMessage.attachments?.length ? 'Image Analysis' : firstMessage.text);
       
       const newSession: ChatSession = {
           id,
@@ -331,7 +331,6 @@ export const ChatSection: React.FC = () => {
       setSessions(prev => {
           const sessionExists = prev.some(s => s.id === id);
           if (!sessionExists) {
-              // Should not typically happen in correct flow, but safe guard
               return prev;
           }
 
@@ -380,55 +379,61 @@ export const ChatSection: React.FC = () => {
       setMessages([]);
       setCurrentSessionId(null);
       localStorage.removeItem('mythos_last_session_id');
-      setAttachment(null);
+      setAttachments([]);
       if (window.innerWidth < 768) {
           setSidebarOpen(false);
       }
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-      if (event.target.files && event.target.files[0]) {
-          const file = event.target.files[0];
-          const reader = new FileReader();
-          reader.onload = (e) => {
-              const result = e.target?.result as string;
-              setAttachment(result);
-          };
-          reader.readAsDataURL(file);
+      if (event.target.files) {
+          (Array.from(event.target.files) as File[]).forEach(file => {
+             const reader = new FileReader();
+             reader.onload = (e) => {
+                 const result = e.target?.result as string;
+                 setAttachments(prev => [...prev, result]);
+             };
+             reader.readAsDataURL(file);
+          });
           event.target.value = '';
       }
   };
 
   const handlePaste = (e: React.ClipboardEvent) => {
     if (e.clipboardData.files && e.clipboardData.files.length > 0) {
-      const file = e.clipboardData.files[0];
-      if (file.type.startsWith('image/')) {
-        e.preventDefault();
-        const reader = new FileReader();
-        reader.onload = (event) => {
-           setAttachment(event.target?.result as string);
-        };
-        reader.readAsDataURL(file);
-      }
+      e.preventDefault();
+      (Array.from(e.clipboardData.files) as File[]).forEach(file => {
+          if (file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+               setAttachments(prev => [...prev, event.target?.result as string]);
+            };
+            reader.readAsDataURL(file);
+          }
+      });
     }
   };
 
+  const removeAttachment = (index: number) => {
+      setAttachments(prev => prev.filter((_, i) => i !== index));
+  }
+
   const handleSend = async (textOverride?: string) => {
     const textToSend = textOverride || input;
-    if ((!textToSend.trim() && !attachment) || isLoading) return;
+    if ((!textToSend.trim() && attachments.length === 0) || isLoading) return;
 
     const userMsg: ChatMessage = { 
         role: 'user', 
         text: textToSend, 
         timestamp: Date.now(),
-        attachment: attachment || undefined
+        attachments: attachments.length > 0 ? [...attachments] : undefined
     };
     
     const newMessages = [...messages, userMsg];
     
     setMessages(newMessages);
     setInput('');
-    setAttachment(null);
+    setAttachments([]);
     setIsLoading(true);
 
     let activeId = currentSessionId;
@@ -442,13 +447,15 @@ export const ChatSection: React.FC = () => {
 
     const history = messages.map(m => {
         const parts: any[] = [{ text: m.text }];
-        if (m.attachment) {
-            parts.push({
-                inlineData: {
-                    mimeType: "image/jpeg",
-                    data: m.attachment.split(',')[1]
-                }
-            });
+        if (m.attachments) {
+            m.attachments.forEach(att => {
+                parts.push({
+                    inlineData: {
+                        mimeType: "image/jpeg",
+                        data: att.split(',')[1]
+                    }
+                });
+            })
         }
         return {
             role: m.role,
@@ -458,7 +465,7 @@ export const ChatSection: React.FC = () => {
 
     const model = isFastMode ? 'gemini-flash-lite-latest' : 'gemini-3-pro-preview';
     
-    const response = await sendChatMessage(history, userMsg.text, model, userMsg.attachment);
+    const response = await sendChatMessage(history, userMsg.text, model, userMsg.attachments);
     
     const modelMsg: ChatMessage = {
       role: 'model',
@@ -493,12 +500,14 @@ export const ChatSection: React.FC = () => {
       // We need to pass the history *before* the last user message, and the last user message as the new input
       const previousHistory = historyForRetry.slice(0, -1).map(m => {
            const parts: any[] = [{ text: m.text }];
-           if (m.attachment) {
-               parts.push({
-                    inlineData: {
-                        mimeType: "image/jpeg",
-                        data: m.attachment.split(',')[1]
-                    }
+           if (m.attachments) {
+               m.attachments.forEach(att => {
+                   parts.push({
+                        inlineData: {
+                            mimeType: "image/jpeg",
+                            data: att.split(',')[1]
+                        }
+                   });
                });
            }
            return { role: m.role, parts };
@@ -507,7 +516,7 @@ export const ChatSection: React.FC = () => {
       const model = isFastMode ? 'gemini-flash-lite-latest' : 'gemini-3-pro-preview';
       
       // Call API
-      const response = await sendChatMessage(previousHistory, lastUserMsg.text, model, lastUserMsg.attachment);
+      const response = await sendChatMessage(previousHistory, lastUserMsg.text, model, lastUserMsg.attachments);
       
       // Add response
       const modelMsg: ChatMessage = {
@@ -664,10 +673,14 @@ export const ChatSection: React.FC = () => {
                              </div>
                              
                              <div className={`flex flex-col gap-2 max-w-[85%] md:max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                                 {/* User Attachment Display */}
-                                 {msg.attachment && (
-                                     <div className="rounded-lg overflow-hidden border border-gray-700 shadow-md max-w-[150px] md:max-w-[200px]">
-                                         <img src={msg.attachment} alt="User Upload" className="w-full h-auto object-cover" />
+                                 {/* User Attachments Display (Grid) */}
+                                 {msg.attachments && msg.attachments.length > 0 && (
+                                     <div className={`grid gap-2 ${msg.attachments.length > 1 ? 'grid-cols-2' : 'grid-cols-1'} max-w-[300px]`}>
+                                         {msg.attachments.map((att, i) => (
+                                             <div key={i} className="rounded-lg overflow-hidden border border-gray-700 shadow-md">
+                                                 <img src={att} alt={`User Upload ${i+1}`} className="w-full h-auto object-cover max-h-[200px]" />
+                                             </div>
+                                         ))}
                                      </div>
                                  )}
 
@@ -729,23 +742,20 @@ export const ChatSection: React.FC = () => {
         {/* Input Bar */}
         <div className="w-full flex justify-center pb-safe-bottom pb-2 md:pb-6 bg-transparent relative z-10 px-2 md:px-4">
             <div className="w-full max-w-4xl relative bg-[#1e2330] rounded-3xl border border-gray-700/50 shadow-2xl transition-all p-2 md:p-3 flex flex-col group focus-within:ring-1 focus-within:ring-gray-600 focus-within:border-gray-600">
-                 {/* Attachment Preview */}
-                 {attachment && (
-                     <div className="flex items-start gap-2 mb-2 p-2 bg-brand-900/50 rounded-lg border border-gray-700 w-fit animate-fade-in mx-1">
-                         <div className="w-12 h-12 rounded overflow-hidden bg-black/20">
-                             <img src={attachment} alt="Preview" className="w-full h-full object-cover" />
-                         </div>
-                         <div className="flex flex-col justify-center h-12 px-1">
-                             <span className="text-[10px] text-brand-gold font-bold uppercase">Image Attached</span>
-                             <span className="text-xs text-gray-500">Gemini 3 Pro</span>
-                         </div>
-                         <button 
-                            type="button"
-                            onClick={() => setAttachment(null)}
-                            className="ml-2 p-2 hover:bg-white/10 rounded-full text-gray-500 hover:text-red-400 transition-colors"
-                         >
-                             <span className="material-symbols-outlined text-lg">close</span>
-                         </button>
+                 {/* Attachments Preview (Scrollable) */}
+                 {attachments.length > 0 && (
+                     <div className="flex items-start gap-2 mb-2 px-1 overflow-x-auto custom-scrollbar pb-2">
+                         {attachments.map((att, idx) => (
+                             <div key={idx} className="relative flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border border-gray-600 group/preview animate-fade-in">
+                                 <img src={att} alt={`Preview ${idx}`} className="w-full h-full object-cover" />
+                                 <button 
+                                     onClick={() => removeAttachment(idx)}
+                                     className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/preview:opacity-100 transition-opacity text-white hover:text-red-400"
+                                 >
+                                     <span className="material-symbols-outlined text-xl">close</span>
+                                 </button>
+                             </div>
+                         ))}
                      </div>
                  )}
 
@@ -760,7 +770,7 @@ export const ChatSection: React.FC = () => {
                             handleSend();
                         }
                     }}
-                    placeholder={attachment ? "Ask about this image..." : "Type a message or ask to generate..."}
+                    placeholder={attachments.length > 0 ? "Ask about these images..." : "Type a message or ask to generate..."}
                     className="w-full bg-transparent border-none text-gray-200 text-base placeholder-gray-500 px-3 py-2 focus:ring-0 focus:outline-none resize-none max-h-[120px] scrollbar-hide mb-1 min-h-[44px]"
                     rows={1}
                  />
@@ -772,6 +782,7 @@ export const ChatSection: React.FC = () => {
                             type="file" 
                             ref={fileInputRef} 
                             accept="image/*" 
+                            multiple
                             className="hidden" 
                             onChange={handleFileSelect} 
                          />
@@ -779,7 +790,7 @@ export const ChatSection: React.FC = () => {
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
                             className="p-2 text-gray-500 hover:text-white hover:bg-white/10 rounded-full transition-colors relative active:scale-90 transform min-w-[40px] flex items-center justify-center"
-                            title="Upload Image"
+                            title="Upload Images"
                          >
                              <span className="material-symbols-outlined text-2xl">add_photo_alternate</span>
                          </button>
@@ -787,15 +798,15 @@ export const ChatSection: React.FC = () => {
                             type="button"
                             className="flex items-center bg-black/20 rounded-full p-0.5 border border-gray-700 cursor-pointer ml-1 active:scale-95 transition-transform select-none disabled:opacity-70 disabled:cursor-not-allowed"
                             onClick={() => setIsFastMode(!isFastMode)}
-                            disabled={!!attachment}
+                            disabled={attachments.length > 0}
                          >
-                             <div className={`px-3 py-1.5 rounded-full text-[10px] md:text-[11px] font-bold transition-all flex items-center gap-1 ${isFastMode && !attachment ? 'bg-brand-accent text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>
+                             <div className={`px-3 py-1.5 rounded-full text-[10px] md:text-[11px] font-bold transition-all flex items-center gap-1 ${isFastMode && attachments.length === 0 ? 'bg-brand-accent text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>
                                  <span className="material-symbols-outlined text-[14px]">bolt</span>
                                  Fast
                              </div>
-                             <div className={`px-3 py-1.5 rounded-full text-[10px] md:text-[11px] font-bold transition-all flex items-center gap-1 ${(!isFastMode || attachment) ? 'bg-brand-gold text-brand-900 shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>
-                                 <span className="material-symbols-outlined text-[14px]">{attachment ? 'visibility' : 'psychology'}</span>
-                                 {attachment ? 'Pro Vision' : 'Smart (Pro)'}
+                             <div className={`px-3 py-1.5 rounded-full text-[10px] md:text-[11px] font-bold transition-all flex items-center gap-1 ${(!isFastMode || attachments.length > 0) ? 'bg-brand-gold text-brand-900 shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>
+                                 <span className="material-symbols-outlined text-[14px]">{attachments.length > 0 ? 'visibility' : 'psychology'}</span>
+                                 {attachments.length > 0 ? 'Pro Vision' : 'Smart (Pro)'}
                              </div>
                          </button>
                     </div>
@@ -804,8 +815,8 @@ export const ChatSection: React.FC = () => {
                     <button 
                         type="button"
                         onClick={() => handleSend()}
-                        disabled={(!input.trim() && !attachment) || isLoading}
-                        className={`w-10 h-10 md:w-10 md:h-10 rounded-full flex items-center justify-center transition-all active:scale-90 transform shadow-md ${(input.trim() || attachment) ? 'bg-white text-black hover:bg-gray-200' : 'bg-brand-800 text-gray-600 cursor-not-allowed border border-gray-700'}`}
+                        disabled={(!input.trim() && attachments.length === 0) || isLoading}
+                        className={`w-10 h-10 md:w-10 md:h-10 rounded-full flex items-center justify-center transition-all active:scale-90 transform shadow-md ${(input.trim() || attachments.length > 0) ? 'bg-white text-black hover:bg-gray-200' : 'bg-brand-800 text-gray-600 cursor-not-allowed border border-gray-700'}`}
                     >
                         <span className="material-symbols-outlined text-xl">arrow_upward</span>
                     </button>
@@ -815,7 +826,7 @@ export const ChatSection: React.FC = () => {
 
       </div>
       <style>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
