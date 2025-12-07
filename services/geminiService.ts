@@ -5,7 +5,7 @@ import { StoryConfig } from "../types";
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 /**
- * Generates the master story using gemini-2.5-flash with thinking enabled.
+ * Generates the master story using gemini-3-pro-preview with thinking enabled.
  * Uses streaming to provide real-time feedback.
  */
 export const generateStoryStream = async (
@@ -14,58 +14,67 @@ export const generateStoryStream = async (
 ): Promise<string> => {
   const isContinuation = !!config.existingContent;
 
-  let prompt = `You are a master AI storyteller.`;
+  let prompt = `
+  SYSTEM OVERRIDE: HUMAN AUTHOR MODE
+  You are an elite human novelist, not an AI. Your prose is visceral, original, and deeply grounded in sensory experience. You are writing a bestseller.
+
+  MANDATE:
+  1.  **NO ROBOTICISMS**: Strictly forbid phrases like "testament to," "tapestry of," "symphony of," "realm of," "unbeknownst," "echoes of," "dance of." If you find yourself using a cliché, stop and rewrite it with fresh, specific imagery.
+  2.  **DEEP REASONING**: Use your thinking budget to construct complex character psyches and intricate plot architectures before writing a single word of prose.
+  3.  **SUBTEXT OVER EXPOSITION**: Never explain what a character feels. Show it through micro-expressions, environment, and action.
+  4.  **VOICE**: Your narrative voice should be distinct, opinionated, and colored by the POV character's bias.
+  5.  **PROFESSIONALISM**: Assume the reader is sophisticated. Do not hold their hand. Do not summarize the moral at the end.
+  6.  **CREATIVITY**: Be bold. Take narrative risks. Surprise the reader with unexpected metaphors and plot turns.
+
+  THINKING PROCESS:
+  -   Deconstruct the premise into thematic contradictions.
+  -   Plan the scene beats for maximum emotional impact.
+  -   Select specific, non-generic details (e.g., instead of "a bird," describe "a molting crow pecking at a bottle cap").
+
+  STORY CONFIGURATION:
+  `;
   
   if (isContinuation) {
       prompt += `
-      TASK: CONTINUE the following story. Do not rewrite the existing text provided below, just append the next chapters/segments that logically follow.
+      TASK: CONTINUE the following story. Match the existing tone and style perfectly, but elevate the prose quality if needed.
       
-      EXISTING STORY SO FAR:
+      EXISTING CONTENT:
       """
       ${config.existingContent}
       """
-      
-      CONFIGURATION FOR CONTINUATION:
       `;
   } else {
       prompt += `
-      TASK: Write a new story based on the following configuration.
+      TASK: Write a brand new story from scratch.
       `;
   }
 
   prompt += `
-    1. Core Premise / Direction: ${config.corePremise}
-    2. Genre: ${config.genre}
-    3. Tone: ${config.tone}
-    4. Narrative Style: ${config.narrativeStyle}
-    5. Target Audience: ${config.targetAudience}
-    6. Length/Structure: ${config.lengthStructure}
-    7. Chapter Count: ${config.chapterCount} (CRITICAL: ${isContinuation ? 'Add this many NEW chapters.' : 'Divide the story into exactly this many chapters.'})
-    8. Key Elements: ${config.keyElements}
-    9. Complexity & Detail: ${config.complexity}
-    10. Ending Type: ${config.endingType}
-    11. Constraints/Inspirations: ${config.constraints}
+    PARAMETERS:
+    - Core Premise: ${config.corePremise}
+    - Genre: ${config.genre}
+    - Tone: ${config.tone}
+    - Narrative Style: ${config.narrativeStyle}
+    - Target Audience: ${config.targetAudience}
+    - Length/Structure: ${config.lengthStructure}
+    - Chapter Count: ${config.chapterCount} (Segment strictly into this many chapters).
+    - Key Elements: ${config.keyElements}
+    - Complexity: ${config.complexity}
+    - Ending Type: ${config.endingType}
+    - Constraints: ${config.constraints}
 
-    Based on these parameters, please:
-    1. Conduct any necessary internal research to ensure factual consistency.
-    2. Write a complex, multi-layered narrative story.
-    3. Strictly segment the story into ${config.chapterCount} chapters using markdown headers (## Chapter X: Title).
-    4. Include Appendices with research footnotes if applicable.
-    
-    Output Format:
-    ${isContinuation ? '## Chapter [Next Number]: [Chapter Title]' : '# [Story Title]\n\n## Chapter 1: [Chapter Title]'}
-    [Chapter Content]
+    OUTPUT FORMAT:
+    ${isContinuation ? '## Chapter [Next]: [Title]' : '# [Story Title]\n\n## Chapter 1: [Title]'}
+    [Content]
     ...
-    ## Appendices
-    [Details]
   `;
 
   try {
     const responseStream = await ai.models.generateContentStream({
-      model: "gemini-2.5-flash",
+      model: "gemini-3-pro-preview",
       contents: prompt,
       config: {
-        thinkingConfig: { thinkingBudget: 16000 }, 
+        thinkingConfig: { thinkingBudget: 32768 }, 
       },
     });
 
@@ -140,10 +149,25 @@ export const generateImageVariations = async (prompt: string, aspectRatio: strin
 
 /**
  * Edits an image based on a text prompt using gemini-2.5-flash-image (Nano Banana).
+ * Accepts File or Base64 string.
  */
-export const editImage = async (imageFile: File, prompt: string, aspectRatio: string = "1:1"): Promise<string> => {
-  // Convert File to Base64
-  const base64Data = await fileToGenerativePart(imageFile);
+export const editImage = async (imageInput: File | string, prompt: string, aspectRatio: string = "1:1"): Promise<string> => {
+  let base64Data = "";
+  let mimeType = "image/png";
+
+  if (imageInput instanceof File) {
+    base64Data = await fileToGenerativePart(imageInput);
+    mimeType = imageInput.type;
+  } else {
+    // Handle base64 string
+    const match = imageInput.match(/^data:(.*?);base64,(.*)$/);
+    if (match) {
+        mimeType = match[1];
+        base64Data = match[2];
+    } else {
+        base64Data = imageInput; // Assume raw base64 if no prefix
+    }
+  }
 
   try {
     const response: GenerateContentResponse = await ai.models.generateContent({
@@ -153,7 +177,7 @@ export const editImage = async (imageFile: File, prompt: string, aspectRatio: st
           {
             inlineData: {
               data: base64Data,
-              mimeType: imageFile.type,
+              mimeType: mimeType,
             },
           },
           {
@@ -186,8 +210,8 @@ export const editImage = async (imageFile: File, prompt: string, aspectRatio: st
 /**
  * Edits multiple image variations in parallel.
  */
-export const editImageVariations = async (imageFile: File, prompt: string, aspectRatio: string = "1:1", count: number = 4): Promise<string[]> => {
-  const promises = Array.from({ length: count }, () => editImage(imageFile, prompt, aspectRatio));
+export const editImageVariations = async (imageInput: File | string, prompt: string, aspectRatio: string = "1:1", count: number = 4): Promise<string[]> => {
+  const promises = Array.from({ length: count }, () => editImage(imageInput, prompt, aspectRatio));
   
   const results = await Promise.allSettled(promises);
   
@@ -276,7 +300,9 @@ export const sendChatMessage = async (
       contents: contents,
       config: {
         tools: [{ functionDeclarations: [generateImageTool] }],
-        systemInstruction: systemInstruction
+        systemInstruction: systemInstruction,
+        // Enable thinking if using the pro model
+        ...(effectiveModel === 'gemini-3-pro-preview' ? { thinkingConfig: { thinkingBudget: 32768 } } : {})
       }
     });
 

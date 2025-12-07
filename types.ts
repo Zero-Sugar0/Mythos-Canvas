@@ -57,6 +57,7 @@ export interface ImageHistoryItem {
   prompt: string;
   imageData: string;
   mode: 'CREATE' | 'EDIT';
+  aspectRatio?: string;
 }
 
 export interface PageData {

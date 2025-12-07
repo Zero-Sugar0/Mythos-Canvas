@@ -9,6 +9,7 @@ import { generateStoryStream } from './services/geminiService';
 const App: React.FC = () => {
   const [view, setView] = useState<AppView>(AppView.DASHBOARD);
   const [generatedStory, setGeneratedStory] = useState<string | null>(null);
+  const [activeStoryId, setActiveStoryId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   
@@ -41,27 +42,43 @@ const App: React.FC = () => {
     }
   }, [view]); // Reload when view changes to keep sync
 
-  const saveToHistory = (content: string, config: StoryConfig) => {
+  const saveToHistory = (content: string, config: StoryConfig, existingId?: string) => {
     const titleLine = content.split('\n').find(l => l.startsWith('# '));
     const title = titleLine ? titleLine.replace('# ', '').trim() : 'Untitled Story';
     const excerpt = content.slice(0, 150).replace(/[#*]/g, '') + '...';
     
-    const newItem: HistoryItem = {
-      id: Date.now().toString(),
-      timestamp: Date.now(),
-      title,
-      excerpt,
-      content,
-      config
-    };
+    let newHistory: HistoryItem[];
+    let id = existingId || Date.now().toString();
 
-    const newHistory = [newItem, ...history];
+    if (existingId) {
+        // Update existing item
+        newHistory = history.map(h => h.id === existingId ? { ...h, title, excerpt, content, timestamp: Date.now() } : h);
+        
+        // Move to top
+        const item = newHistory.find(h => h.id === existingId);
+        const others = newHistory.filter(h => h.id !== existingId);
+        if (item) newHistory = [item, ...others];
+    } else {
+         // Create new item
+         const newItem: HistoryItem = {
+            id,
+            timestamp: Date.now(),
+            title,
+            excerpt,
+            content,
+            config
+         };
+         newHistory = [newItem, ...history];
+    }
+
     setHistory(newHistory);
     localStorage.setItem('mythos_history', JSON.stringify(newHistory));
+    return id;
   };
 
   const handleStoryComplete = async (config: StoryConfig) => {
     setIsGenerating(true);
+    setActiveStoryId(null); // Reset active ID for new story
     
     // If Continuing, we start with the existing content
     const startingText = config.existingContent ? config.existingContent + '\n\n' : '';
@@ -79,7 +96,8 @@ const App: React.FC = () => {
       });
       // Save when done
       if (fullText) {
-          saveToHistory(fullText, config);
+          const newId = saveToHistory(fullText, config);
+          setActiveStoryId(newId);
       }
     } catch (e) {
       alert("Something went wrong with the story engine.");
@@ -89,8 +107,20 @@ const App: React.FC = () => {
     }
   };
 
+  const handleStoryUpdate = (newContent: string) => {
+      setGeneratedStory(newContent);
+      // Auto-save edits if we have an active story ID
+      if (activeStoryId) {
+          const currentItem = history.find(h => h.id === activeStoryId);
+          if (currentItem) {
+              saveToHistory(newContent, currentItem.config, activeStoryId);
+          }
+      }
+  };
+
   const loadHistoryItem = (item: HistoryItem) => {
       setGeneratedStory(item.content);
+      setActiveStoryId(item.id);
       setView(AppView.STORY_RESULT);
   };
 
@@ -104,6 +134,10 @@ const App: React.FC = () => {
       const newHistory = history.filter(h => h.id !== id);
       setHistory(newHistory);
       localStorage.setItem('mythos_history', JSON.stringify(newHistory));
+      if (activeStoryId === id) {
+          setActiveStoryId(null);
+          setGeneratedStory(null);
+      }
   }
   
   const deleteImageItem = (e: React.MouseEvent, id: string) => {
@@ -133,7 +167,7 @@ const App: React.FC = () => {
                 <div className="absolute inset-4 border-b-4 border-brand-accent rounded-full animate-spin-reverse"></div>
             </div>
             <h2 className="text-2xl md:text-4xl font-serif text-white mb-4 tracking-tight">Weaving Narrative</h2>
-            <p className="text-gray-400 text-sm md:text-lg max-w-md">Consulting the muse... Gemini 2.5 Flash is analyzing your constraints and structuring the plot.</p>
+            <p className="text-gray-400 text-sm md:text-lg max-w-md">Consulting the muse... Gemini 3 Pro is analyzing your constraints and structuring the plot.</p>
         </div>
       );
     }
@@ -145,9 +179,9 @@ const App: React.FC = () => {
         return (
             <StoryView 
                 content={generatedStory || ''} 
-                onReset={() => { setGeneratedStory(null); setView(AppView.DASHBOARD); }} 
+                onReset={() => { setGeneratedStory(null); setActiveStoryId(null); setView(AppView.DASHBOARD); }} 
                 isStreaming={isGenerating}
-                onUpdate={(newContent) => setGeneratedStory(newContent)}
+                onUpdate={handleStoryUpdate}
             />
         );
       case AppView.IMAGE_STUDIO:
@@ -491,7 +525,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-brand-900 text-gray-100 font-sans selection:bg-brand-accent selection:text-white">
+    <div className="h-screen flex flex-col bg-brand-900 text-gray-100 font-sans selection:bg-brand-accent selection:text-white overflow-hidden">
       {/* Mobile Menu Overlay */}
       {isMenuOpen && (
          <div 
@@ -500,23 +534,23 @@ const App: React.FC = () => {
          />
       )}
 
-      {/* Header */}
-      <nav className="border-b border-brand-700 bg-brand-900/90 backdrop-blur sticky top-0 z-50 shadow-sm transition-all">
-        <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 md:h-20 flex items-center justify-between relative bg-brand-900/0">
+      {/* Header - Fixed Height, Flex None */}
+      <nav className="flex-none h-12 md:h-14 border-b border-brand-700 bg-brand-900/90 backdrop-blur z-50 shadow-sm relative">
+        <div className="max-w-7xl mx-auto px-4 md:px-6 h-full flex items-center justify-between">
             {/* Logo */}
             <div 
               className="flex items-center gap-2 md:gap-3 cursor-pointer group flex-shrink-0 z-50" 
               onClick={() => handleNav(AppView.DASHBOARD)}
             >
-                <div className="w-8 h-8 md:w-10 md:h-10 bg-gradient-to-br from-brand-gold to-brand-accent rounded-lg flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform">
-                    <span className="material-symbols-outlined text-brand-900 text-lg md:text-2xl">auto_awesome</span>
+                <div className="w-7 h-7 md:w-8 md:h-8 bg-gradient-to-br from-brand-gold to-brand-accent rounded-lg flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform">
+                    <span className="material-symbols-outlined text-brand-900 text-base md:text-lg">auto_awesome</span>
                 </div>
-                <span className="font-serif font-bold text-lg md:text-xl tracking-wide text-white hidden sm:block">Mythos & Canvas</span>
-                <span className="font-serif font-bold text-lg tracking-wide text-white sm:hidden">Mythos</span>
+                <span className="font-serif font-bold text-base md:text-lg tracking-wide text-white hidden sm:block">Mythos & Canvas</span>
+                <span className="font-serif font-bold text-base tracking-wide text-white sm:hidden">Mythos</span>
             </div>
             
             {/* Desktop Nav */}
-            <div className="hidden md:flex gap-2 bg-brand-800/50 p-1.5 rounded-full border border-brand-700/50">
+            <div className="hidden md:flex gap-1 bg-brand-800/50 p-1 rounded-full border border-brand-700/50">
                 {[
                     { id: AppView.WIZARD, label: 'Story' },
                     { id: AppView.IMAGE_STUDIO, label: 'Images' },
@@ -526,7 +560,7 @@ const App: React.FC = () => {
                     <button 
                         key={item.id}
                         onClick={() => handleNav(item.id)}
-                        className={`text-sm font-medium px-5 py-2 rounded-full transition-all whitespace-nowrap ${view === item.id ? 'bg-brand-700 text-white shadow-md' : 'text-gray-400 hover:text-white'}`}
+                        className={`text-xs md:text-sm font-medium px-4 py-1.5 rounded-full transition-all whitespace-nowrap ${view === item.id ? 'bg-brand-700 text-white shadow-md' : 'text-gray-400 hover:text-white'}`}
                     >
                         {item.label}
                     </button>
@@ -539,7 +573,7 @@ const App: React.FC = () => {
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
                 aria-label="Toggle Menu"
             >
-                <span className="material-symbols-outlined text-3xl">
+                <span className="material-symbols-outlined text-xl">
                     {isMenuOpen ? 'close' : 'menu'}
                 </span>
             </button>
@@ -567,9 +601,15 @@ const App: React.FC = () => {
         </div>
       </nav>
 
-      {/* Main Area */}
-      <main className={view === AppView.CHAT ? 'w-full h-[calc(100vh-64px)] md:h-[calc(100vh-80px)]' : 'container mx-auto px-4 py-4 md:py-8'}>
-        {renderContent()}
+      {/* Main Area - Flex-1 to fill remaining space. Chat is overflow-hidden to let internal scroll work. Others scroll here. */}
+      <main className={`flex-1 relative min-h-0 ${view === AppView.CHAT ? 'overflow-hidden flex flex-col' : 'overflow-y-auto scroll-smooth'}`}>
+        {view !== AppView.CHAT ? (
+             <div className="container mx-auto px-4 py-4 md:py-8">
+                 {renderContent()}
+             </div>
+        ) : (
+             renderContent()
+        )}
       </main>
 
       <style>{`

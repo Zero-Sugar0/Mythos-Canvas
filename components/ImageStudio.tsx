@@ -47,6 +47,9 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
   const [gallery, setGallery] = useState<ImageHistoryItem[]>([]);
   const [aspectRatio, setAspectRatio] = useState('1:1');
   
+  // Advanced Editing State
+  const [adjustments, setAdjustments] = useState({ brightness: 100, contrast: 100, saturation: 100 });
+
   // Delete Confirmation State
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
@@ -68,15 +71,10 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
     }
   }, []);
 
-  // Handle Initial Image from Library
+  // Handle Initial Image from Library (props)
   useEffect(() => {
       if (initialImage) {
-          setResultImage(initialImage.imageData);
-          setPrompt(initialImage.prompt);
-          setMode(initialImage.mode);
-          setVariations([]);
-          // Scroll to top
-          window.scrollTo(0, 0);
+          loadFromGallery(initialImage);
       }
   }, [initialImage]);
 
@@ -85,6 +83,13 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
       setZoom(1);
       setPan({ x: 0, y: 0 });
   }, [resultImage]);
+
+  const resetAdjustments = () => setAdjustments({ brightness: 100, contrast: 100, saturation: 100 });
+
+  // Reset adjustments when a new file is selected
+  useEffect(() => {
+      resetAdjustments();
+  }, [selectedFile, previewUrl]);
 
   const saveToGallery = (imageData: string, usedPrompt: string, usedMode: StudioMode) => {
       // Check if duplicate (simple check)
@@ -95,7 +100,8 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
           timestamp: Date.now(),
           prompt: usedPrompt,
           imageData: imageData,
-          mode: usedMode
+          mode: usedMode,
+          aspectRatio: aspectRatio
       };
       
       const newGallery = [newItem, ...gallery];
@@ -124,24 +130,35 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
   };
 
   const loadFromGallery = (item: ImageHistoryItem) => {
-      if (mode === 'EDIT') {
-          // If in edit mode, use this image as the source
+      // Standard Load: Show as result
+      setResultImage(item.imageData);
+      setPrompt(item.prompt);
+      setMode(item.mode);
+      setVariations([]);
+      if (item.aspectRatio) setAspectRatio(item.aspectRatio);
+      
+      // If we are loading an EDIT mode item, we likely want to continue editing it (chaining).
+      // Or if the user wants to refine the previous output.
+      if (item.mode === 'EDIT') {
           setPreviewUrl(item.imageData);
-          // Need to convert base64 to File object if we want to submit it to the API again
-          fetch(item.imageData)
-            .then(res => res.blob())
-            .then(blob => {
-                const file = new File([blob], "loaded_image.png", { type: "image/png" });
-                setSelectedFile(file);
-            });
-      } else {
-          // If in create mode, just show it as a result
-          setResultImage(item.imageData);
-          setPrompt(item.prompt);
-          setVariations([]);
+          setSelectedFile(null);
       }
+
       window.scrollTo(0, 0);
   };
+  
+  const handleRefine = (e: React.MouseEvent, item: ImageHistoryItem) => {
+      e.stopPropagation();
+      // Refine/Remix Flow
+      setMode('EDIT');
+      setPrompt(item.prompt);
+      setPreviewUrl(item.imageData);
+      setSelectedFile(null); // Clear file as we are using base64
+      if (item.aspectRatio) setAspectRatio(item.aspectRatio);
+      resetAdjustments();
+      // Scroll to input
+      window.scrollTo(0, 0);
+  }
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
@@ -155,9 +172,41 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
     }
   };
 
+  // Generate a processed base64 string including CSS filters if applied
+  const getProcessedImage = async (): Promise<string> => {
+      if (!previewUrl) return "";
+      
+      // If default adjustments, return original
+      if (adjustments.brightness === 100 && adjustments.contrast === 100 && adjustments.saturation === 100) {
+          return previewUrl;
+      }
+
+      return new Promise((resolve) => {
+          const img = new Image();
+          img.crossOrigin = "Anonymous";
+          img.onload = () => {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.width;
+              canvas.height = img.height;
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                  // Apply filters
+                  ctx.filter = `brightness(${adjustments.brightness}%) contrast(${adjustments.contrast}%) saturate(${adjustments.saturation}%)`;
+                  ctx.drawImage(img, 0, 0, img.width, img.height);
+                  // Return base64
+                  resolve(canvas.toDataURL(selectedFile?.type || 'image/png'));
+              } else {
+                  resolve(previewUrl);
+              }
+          };
+          img.onerror = () => resolve(previewUrl);
+          img.src = previewUrl;
+      });
+  };
+
   const handleAction = async () => {
     if (!prompt) return;
-    if (mode === 'EDIT' && !selectedFile) return;
+    if (mode === 'EDIT' && !previewUrl) return;
     
     setIsGenerating(true);
     setResultImage(null);
@@ -174,10 +223,13 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
             results = [single];
         }
       } else {
+        // Prepare image (File or Base64 from Canvas)
+        const imageToProcess = await getProcessedImage();
+
         if (variationCount > 1) {
-            results = await editImageVariations(selectedFile!, prompt, aspectRatio, variationCount);
+            results = await editImageVariations(imageToProcess, prompt, aspectRatio, variationCount);
         } else {
-            const single = await editImage(selectedFile!, prompt, aspectRatio);
+            const single = await editImage(imageToProcess, prompt, aspectRatio);
             results = [single];
         }
       }
@@ -290,21 +342,69 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
             </h3>
             
             {mode === 'EDIT' && (
-                <div className="border-2 border-dashed border-brand-700 rounded-xl h-48 md:h-64 flex flex-col items-center justify-center bg-brand-900/50 hover:border-brand-accent transition-colors relative overflow-hidden group mb-6">
-                    {previewUrl ? (
-                        <img src={previewUrl} alt="Preview" className="h-full w-full object-contain" />
-                    ) : (
-                        <div className="text-center p-6 pointer-events-none">
-                            <span className="material-symbols-outlined text-4xl text-gray-500 mb-2">upload_file</span>
-                            <p className="text-xs md:text-sm text-gray-400">Click to upload or drag & drop</p>
+                <div className="mb-6 space-y-4">
+                    {/* Image Preview & Upload */}
+                    <div className="border-2 border-dashed border-brand-700 rounded-xl h-48 md:h-64 flex flex-col items-center justify-center bg-brand-900/50 hover:border-brand-accent transition-colors relative overflow-hidden group">
+                        {previewUrl ? (
+                            <img 
+                                src={previewUrl} 
+                                alt="Preview" 
+                                className="h-full w-full object-contain"
+                                style={{
+                                    filter: `brightness(${adjustments.brightness}%) contrast(${adjustments.contrast}%) saturate(${adjustments.saturation}%)`
+                                }} 
+                            />
+                        ) : (
+                            <div className="text-center p-6 pointer-events-none">
+                                <span className="material-symbols-outlined text-4xl text-gray-500 mb-2">upload_file</span>
+                                <p className="text-xs md:text-sm text-gray-400">Click to upload or drag & drop</p>
+                            </div>
+                        )}
+                        <input 
+                            type="file" 
+                            accept="image/*"
+                            onChange={handleFileSelect}
+                            className="absolute inset-0 opacity-0 cursor-pointer" 
+                        />
+                    </div>
+
+                    {/* Advanced Adjustments Sliders */}
+                    {previewUrl && (
+                        <div className="bg-brand-900/50 p-4 rounded-xl border border-brand-700/50">
+                            <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-3 flex items-center gap-1">
+                                <span className="material-symbols-outlined text-xs">tune</span> Adjustment Tools
+                            </p>
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-3">
+                                    <span className="material-symbols-outlined text-gray-400 text-sm">light_mode</span>
+                                    <input 
+                                        type="range" min="50" max="150" value={adjustments.brightness} 
+                                        onChange={(e) => setAdjustments({...adjustments, brightness: Number(e.target.value)})}
+                                        className="w-full accent-brand-accent h-1 bg-brand-700 rounded-lg appearance-none cursor-pointer"
+                                    />
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <span className="material-symbols-outlined text-gray-400 text-sm">contrast</span>
+                                    <input 
+                                        type="range" min="50" max="150" value={adjustments.contrast} 
+                                        onChange={(e) => setAdjustments({...adjustments, contrast: Number(e.target.value)})}
+                                        className="w-full accent-brand-accent h-1 bg-brand-700 rounded-lg appearance-none cursor-pointer"
+                                    />
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <span className="material-symbols-outlined text-gray-400 text-sm">invert_colors</span>
+                                    <input 
+                                        type="range" min="0" max="200" value={adjustments.saturation} 
+                                        onChange={(e) => setAdjustments({...adjustments, saturation: Number(e.target.value)})}
+                                        className="w-full accent-brand-accent h-1 bg-brand-700 rounded-lg appearance-none cursor-pointer"
+                                    />
+                                </div>
+                                <div className="flex justify-end">
+                                    <button onClick={resetAdjustments} className="text-[10px] text-brand-gold hover:underline">Reset</button>
+                                </div>
+                            </div>
                         </div>
                     )}
-                    <input 
-                        type="file" 
-                        accept="image/*"
-                        onChange={handleFileSelect}
-                        className="absolute inset-0 opacity-0 cursor-pointer" 
-                    />
                 </div>
             )}
 
@@ -388,7 +488,7 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
                 
                 <button
                     onClick={handleAction}
-                    disabled={(!prompt || (mode === 'EDIT' && !selectedFile) || isGenerating)}
+                    disabled={(!prompt || (mode === 'EDIT' && !previewUrl) || isGenerating)}
                     className="w-full mt-2 bg-brand-accent hover:bg-indigo-500 disabled:opacity-50 text-white px-4 py-3 md:px-6 md:py-4 rounded-xl font-bold transition-colors flex items-center justify-center gap-2 shadow-lg text-sm md:text-base active:scale-95 transform duration-150"
                 >
                     {isGenerating ? (
@@ -410,15 +510,31 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
         <div className="bg-brand-800 p-4 md:p-6 rounded-2xl border border-brand-700 flex flex-col min-h-[300px] md:min-h-[500px]">
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg md:text-xl font-medium text-white">Canvas Result</h3>
-                {resultImage && (
-                    <button 
-                        onClick={() => saveToGallery(resultImage!, prompt, mode)}
-                        className="text-xs flex items-center gap-1 text-gray-400 hover:text-brand-gold transition-colors active:scale-90"
-                        title="Save to Gallery"
-                    >
-                         <span className="material-symbols-outlined text-sm">bookmark_add</span> Save
-                    </button>
-                )}
+                <div className="flex gap-2">
+                    {resultImage && (
+                         <button 
+                            onClick={() => {
+                                setMode('EDIT');
+                                setPreviewUrl(resultImage);
+                                setSelectedFile(null);
+                                window.scrollTo(0,0);
+                            }}
+                            className="text-xs flex items-center gap-1 text-gray-400 hover:text-white transition-colors bg-brand-700 px-3 py-1.5 rounded-lg border border-brand-600"
+                            title="Use as input for editing"
+                         >
+                             <span className="material-symbols-outlined text-sm">auto_fix_high</span> Refine
+                         </button>
+                    )}
+                    {resultImage && (
+                        <button 
+                            onClick={() => saveToGallery(resultImage!, prompt, mode)}
+                            className="text-xs flex items-center gap-1 text-gray-400 hover:text-brand-gold transition-colors active:scale-90 bg-brand-900/50 px-3 py-1.5 rounded-lg border border-brand-700"
+                            title="Save to Gallery"
+                        >
+                            <span className="material-symbols-outlined text-sm">bookmark_add</span> Save
+                        </button>
+                    )}
+                </div>
             </div>
             
             {/* Main Preview with Zoom/Pan */}
@@ -546,13 +662,22 @@ export const ImageStudio: React.FC<Props> = ({ initialImage }) => {
                                <p className="text-gray-300 text-[10px] line-clamp-2 leading-tight hidden md:block">{item.prompt}</p>
                           </div>
 
-                          <button 
-                              onClick={(e) => requestDelete(e, item.id)}
-                              className="absolute top-2 right-2 bg-black/50 hover:bg-red-500/80 text-white p-1.5 rounded-full backdrop-blur-sm opacity-100 md:opacity-0 group-hover:opacity-100 transition-all active:scale-90"
-                              title="Delete"
-                          >
-                              <span className="material-symbols-outlined text-xs">delete</span>
-                          </button>
+                          <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                             <button 
+                                onClick={(e) => handleRefine(e, item)}
+                                className="bg-brand-gold text-brand-900 p-1.5 rounded-full shadow-lg hover:bg-white transition-colors"
+                                title="Refine/Edit"
+                             >
+                                 <span className="material-symbols-outlined text-xs font-bold">auto_fix_high</span>
+                             </button>
+                             <button 
+                                onClick={(e) => requestDelete(e, item.id)}
+                                className="bg-black/50 hover:bg-red-500/80 text-white p-1.5 rounded-full backdrop-blur-sm transition-colors"
+                                title="Delete"
+                             >
+                                 <span className="material-symbols-outlined text-xs">delete</span>
+                             </button>
+                          </div>
                       </div>
                   ))}
               </div>
