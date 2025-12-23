@@ -184,8 +184,8 @@ const App: React.FC = () => {
                 <div className="absolute inset-4 border-4 border-brand-800 rounded-full"></div>
                 <div className="absolute inset-4 border-b-4 border-brand-accent rounded-full animate-spin-reverse"></div>
             </div>
-            <h2 className="text-2xl md:text-4xl font-serif text-white mb-4 tracking-tight">Weaving Narrative</h2>
-            <p className="text-gray-400 text-sm md:text-lg max-w-md">Consulting the muse... Gemini 3 Pro is analyzing your constraints and structuring the plot.</p>
+            <h2 className="text-2xl md:text-4xl font-serif text-white mb-4 tracking-tight">The Muse is awakening...</h2>
+            <p className="text-gray-400 text-sm md:text-lg max-w-md">Analyzing your creative vision and weaving the narrative threads.</p>
         </div>
       );
     }

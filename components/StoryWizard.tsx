@@ -138,8 +138,162 @@ const QUESTIONS: QuestionConfig[] = [
   },
 ];
 
+interface StoryTemplate {
+    title: string;
+    genre: string;
+    icon: string;
+    config: Partial<StoryConfig>;
+}
+
+const STORY_TEMPLATES: StoryTemplate[] = [
+    {
+        title: "The Starlight Guardian",
+        genre: "Kids / Magical",
+        icon: "auto_awesome",
+        config: {
+            corePremise: "In the sleepy town of Oakhaven, a lonely eight-year-old named Leo discovers a fallen star hiding in his dusty attic. But the star is fading, and the Shadow King—a creature made of nightmares who hunts light—is closing in. Leo must embark on a perilous journey across the Whispering Woods to return the star to the constellation of the Guardian before the last flicker dies out.",
+            genre: "Children's Fantasy, Adventure, Coming-of-Age",
+            tone: "Whimsical, heartwarming, wondrous, slightly perilous",
+            narrativeStyle: "Third-person omniscient, simple and lyrical language",
+            targetAudience: "Middle Grade (8-12)",
+            lengthStructure: "Short Story, linear adventure structure",
+            chapterCount: "3",
+            keyElements: "Protagonist: Leo (brave but small). Companion: Lumina (the star). Antagonist: The Shadow King. Setting: Oakhaven and the magical Whispering Woods. Theme: Even the smallest light can conquer darkness.",
+            complexity: "Low",
+            endingType: "Happy",
+            constraints: "No graphic violence, focus on problem solving through kindness and courage."
+        }
+    },
+    {
+        title: "Neon Rain",
+        genre: "Sci-Fi / Noir",
+        icon: "smart_toy",
+        config: {
+            corePremise: "New Shanghai, 2099. Rain never stops, and memories are the ultimate currency. Kael, a washed-up memory broker, stumbles upon a 'Ghost File'—a raw, unedited memory of a political assassination that history claims never happened. Now, hunted by the Synthetic Enforcers and his own fractured past, he must decrypt the file before his mind is wiped clean.",
+            genre: "Cyberpunk, Noir Mystery, Tech-Thriller",
+            tone: "Dark, gritty, atmospheric, cynical, rainy",
+            narrativeStyle: "First-person perspective (hardboiled detective style)",
+            targetAudience: "Adult Fiction",
+            lengthStructure: "Novelette, with non-linear flashbacks to encrypted memories",
+            chapterCount: "5",
+            keyElements: "Setting: Dystopian New Shanghai. Tech: Mnemo-Link implants. Atmosphere: Perpetual rain, neon, urban decay. Conflict: One man against a mega-corporation rewriting history.",
+            complexity: "High",
+            endingType: "Twist",
+            constraints: "Focus on sensory details of technology, rain, and urban isolation."
+        }
+    },
+    {
+        title: "Whispers of the Baobab",
+        genre: "African Mythology",
+        icon: "nature_people",
+        config: {
+            corePremise: "In a solarpunk Lagos where ancient spirits merge with holographic tech, Zuri, a datamancer, accidentally downloads the consciousness of Eshu, the Trickster God, into her neural link. Eshu demands a tribute: restore the flow of the digital river that sustains the city, or he will unleash a virus of chaos. Zuri must navigate the spirit realm and the dark web to save her home.",
+            genre: "Afrofuturism, Mythic Fantasy, Urban Fantasy",
+            tone: "Vibrant, rhythmic, spiritual yet high-tech, energetic",
+            narrativeStyle: "Third-person limited, rich cultural imagery",
+            targetAudience: "Young Adult (14-18)",
+            lengthStructure: "Short Story",
+            chapterCount: "5",
+            keyElements: "Fusion: Yoruba mythology meets advanced cybernetics. Setting: Neo-Lagos with floating cars and spirit shrines. Characters: Zuri (tech-savvy), Eshu (chaotic ancient spirit). Theme: Balancing tradition with progress.",
+            complexity: "Medium",
+            endingType: "Open",
+            constraints: "Respectful integration of Yoruba mythology and modern African urban life."
+        }
+    },
+    {
+        title: "The Oracle's Lament",
+        genre: "Greek Mythology",
+        icon: "temple_buddhist",
+        config: {
+            corePremise: "A forgotten minor god of margins and footnotes attempts to change a prophecy to save a mortal scribe they have fallen in love with, defying Zeus's absolute decree. As the Fates weave the final thread, the god must trade their immortality for a chance to rewrite a single line of history.",
+            genre: "Historical Fantasy, Romance, Tragedy",
+            tone: "Epic, tragic, poetic, grand",
+            narrativeStyle: "Third-person omniscient, elevated prose",
+            targetAudience: "Adult",
+            lengthStructure: "Novelette",
+            chapterCount: "5",
+            keyElements: "Setting: Mount Olympus and Ancient Athens. Conflict: Fate vs. Free Will. Characters: The Nameless God, Elara the Scribe. Theme: Sacrifice for love.",
+            complexity: "High",
+            endingType: "Tragic",
+            constraints: "Use homeric epithets occasionally. Classical dialogue style. Emotional weight."
+        }
+    },
+    {
+        title: "Quantum Hearts",
+        genre: "Sci-Fi Romance",
+        icon: "favorite",
+        config: {
+            corePremise: "Dr. Aris Thorne and Commander Elara Vance are on opposite sides of a galactic war, separated by light-years. Through a freak accident in a quantum entanglement experiment, they begin to hear each other's thoughts. As the war escalates, their connection deepens from suspicion to intimacy, leading them to plot a way to end the war so they can meet for the first time.",
+            genre: "Space Opera, Romance, Drama",
+            tone: "Melancholic, longing, intellectual, high-stakes",
+            narrativeStyle: "Epistolary (Logs, messages, and shared thoughts)",
+            targetAudience: "Adult",
+            lengthStructure: "Short Story",
+            chapterCount: "3",
+            keyElements: "Theme: Connection across impossible distance. Tech: Quantum Communicator. Setting: Two different starships. Ending: They finally meet in the ruins of a battlefield.",
+            complexity: "Medium",
+            endingType: "Bittersweet",
+            constraints: "Focus on dialogue and internal monologues. Minimal action, maximum emotion."
+        }
+    },
+    {
+        title: "The Clockwork Alchemist",
+        genre: "Steampunk Fantasy",
+        icon: "settings",
+        config: {
+            corePremise: "In a fog-choked Victorian London powered by steam and alchemy, Lyra, a disgraced alchemist, discovers the formula for the 'Philosopher's Gear'—an engine of infinite energy. Hunted by the Royal Gear Guard and the Clockwork Cabal, she must race to install the heart into her automaton father to save his soul before the city consumes them both.",
+            genre: "Steampunk, Fantasy, Adventure",
+            tone: "Adventurous, gritty, steam-filled, urgent",
+            narrativeStyle: "Third-person limited",
+            targetAudience: "Young Adult",
+            lengthStructure: "Standard adventure",
+            chapterCount: "5",
+            keyElements: "Setting: Victorian London with mechs and airships. Magic: Alchemy and Steam. Item: The Philosophers Gear. Antagonist: The Lord High Mechanist.",
+            complexity: "Medium",
+            endingType: "Happy",
+            constraints: "Detailed descriptions of machinery, brass, gears, and steam."
+        }
+    },
+    {
+        title: "Midnight at the Manor",
+        genre: "Mystery / Horror",
+        icon: "local_library",
+        config: {
+            corePremise: "Six strangers receive golden invitations to Blackwood Manor for a dinner party hosted by a recluse billionaire. When they arrive, the doors lock, and the host is found dead at the head of the table. As a storm rages outside, they realize the killer is among them—and the house itself seems to be shifting to trap them.",
+            genre: "Gothic Horror, Murder Mystery, Thriller",
+            tone: "Suspenseful, claustrophobic, eerie, psychological",
+            narrativeStyle: "Third-person rotating POV (shifting between guests)",
+            targetAudience: "Adult",
+            lengthStructure: "Classic whodunit structure",
+            chapterCount: "5",
+            keyElements: "Setting: Decaying Victorian Mansion during a storm. Trope: Locked room mystery. Characters: The Soldier, The Actress, The Doctor, The thief. Secret: Everyone has a connection to the host.",
+            complexity: "Medium",
+            endingType: "Twist",
+            constraints: "No supernatural elements, purely psychological and physical danger. High tension."
+        }
+    },
+    {
+        title: "Echoes of the Ronin",
+        genre: "Historical Tradition",
+        icon: "swords",
+        config: {
+            corePremise: "Japan, 1605. Kenji, a masterless samurai (Ronin) haunted by his failure to protect his lord, travels the countryside seeking redemption. He arrives in a village threatened by bandits who demand their harvest. Kenji must teach the villagers to defend themselves and face the bandit leader—a ghost from his past—without drawing his blood-stained blade until the final moment.",
+            genre: "Historical Fiction, Action, Drama",
+            tone: "Honor-bound, contemplative, intense, atmospheric",
+            narrativeStyle: "Third-person limited (Stoic and observational)",
+            targetAudience: "Adult",
+            lengthStructure: "Short Story",
+            chapterCount: "3",
+            keyElements: "Setting: Edo period Japan (Autumn). Theme: Bushido, Pacifism vs. Necessity. Conflict: Internal guilt vs. External threat.",
+            complexity: "Medium",
+            endingType: "Triumphant",
+            constraints: "Historical accuracy in weapons, tea ceremonies, and customs. Slow build to fast action."
+        }
+    }
+];
+
 export const StoryWizard: React.FC<Props> = ({ onComplete, onCancel }) => {
-  const [mode, setMode] = useState<'SELECT' | 'WIZARD'>('SELECT');
+  const [mode, setMode] = useState<'SELECT' | 'WIZARD' | 'TEMPLATES'>('SELECT');
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Partial<StoryConfig>>({});
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -157,6 +311,12 @@ export const StoryWizard: React.FC<Props> = ({ onComplete, onCancel }) => {
       setAnswers({ existingContent: '' });
       setMode('WIZARD');
       setStep(-1); // Special step for paste/upload
+  }
+
+  const handleTemplateSelect = (template: StoryTemplate) => {
+      setAnswers(template.config);
+      setMode('WIZARD');
+      setStep(QUESTIONS.length); // Jump to Review
   }
 
   const handleNext = async () => {
@@ -247,34 +407,89 @@ export const StoryWizard: React.FC<Props> = ({ onComplete, onCancel }) => {
       }
   };
 
+  // Template View
+  if (mode === 'TEMPLATES') {
+      return (
+          <div className="max-w-7xl mx-auto mt-4 md:mt-8 px-4 animate-fade-in pb-12">
+              <div className="flex items-center gap-4 mb-8">
+                  <button onClick={() => setMode('SELECT')} className="p-2 rounded-full bg-brand-800 hover:bg-brand-700 text-gray-400 hover:text-white transition-colors">
+                      <span className="material-symbols-outlined">arrow_back</span>
+                  </button>
+                  <div>
+                      <h2 className="text-2xl md:text-3xl font-serif text-white">Story Templates</h2>
+                      <p className="text-gray-400 text-sm">Select a rich archetype to jumpstart your narrative.</p>
+                  </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {STORY_TEMPLATES.map((t, idx) => (
+                      <div 
+                        key={idx} 
+                        className="bg-brand-800 border border-brand-700 rounded-2xl p-6 flex flex-col hover:border-brand-gold/50 transition-all hover:shadow-xl hover:-translate-y-1 group cursor-pointer h-full"
+                        onClick={() => handleTemplateSelect(t)}
+                      >
+                          <div className="flex justify-between items-start mb-4">
+                              <div className="w-12 h-12 bg-brand-900 rounded-xl flex items-center justify-center border border-brand-700 group-hover:border-brand-gold/30 transition-colors flex-shrink-0">
+                                  <span className="material-symbols-outlined text-2xl text-brand-gold">{t.icon}</span>
+                              </div>
+                              <span className="text-[10px] uppercase font-bold tracking-widest bg-brand-900 px-2 py-1 rounded text-gray-400 text-right">{t.genre}</span>
+                          </div>
+                          <h3 className="text-lg font-bold text-white mb-2 font-serif group-hover:text-brand-gold transition-colors">{t.title}</h3>
+                          <p className="text-sm text-gray-400 leading-relaxed mb-6 line-clamp-5 flex-1">{t.config.corePremise}</p>
+                          <div className="mt-auto">
+                              <div className="flex gap-2 mb-4 flex-wrap">
+                                  {t.config.chapterCount && <span className="text-[10px] bg-brand-900 px-2 py-1 rounded text-gray-500">{t.config.chapterCount} Chapters</span>}
+                                  {t.config.complexity && <span className="text-[10px] bg-brand-900 px-2 py-1 rounded text-gray-500">{t.config.complexity} Complexity</span>}
+                              </div>
+                              <button className="w-full py-3 bg-brand-700 hover:bg-brand-600 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2">
+                                  Use Template
+                              </button>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          </div>
+      )
+  }
+
   // Mode Selection Screen
   if (mode === 'SELECT') {
       return (
-        <div className="max-w-4xl mx-auto mt-6 md:mt-20 px-2 md:px-4 animate-fade-in">
+        <div className="max-w-5xl mx-auto mt-6 md:mt-20 px-4 animate-fade-in">
             <h2 className="text-2xl md:text-4xl font-serif text-white text-center mb-6 md:mb-12">How shall we begin?</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <button 
                     onClick={startNew}
-                    className="group bg-brand-800 p-6 md:p-10 rounded-3xl border border-brand-700 hover:border-brand-accent hover:bg-brand-800/80 transition-all text-left relative overflow-hidden"
+                    className="group bg-brand-800 p-8 rounded-3xl border border-brand-700 hover:border-brand-accent hover:bg-brand-800/80 transition-all text-left relative overflow-hidden flex flex-col h-full"
                 >
                     <div className="absolute top-0 right-0 w-32 h-32 bg-brand-accent/10 rounded-bl-full group-hover:scale-110 transition-transform"></div>
-                    <span className="material-symbols-outlined text-4xl md:text-5xl text-brand-accent mb-4 md:mb-6 bg-brand-900 p-3 md:p-4 rounded-2xl shadow-lg group-hover:bg-brand-accent group-hover:text-white transition-colors">edit_square</span>
-                    <h3 className="text-xl md:text-2xl font-bold text-white mb-2">Start from Scratch</h3>
-                    <p className="text-sm md:text-base text-gray-400">Define your premise and let the AI weave a completely new tale.</p>
+                    <span className="material-symbols-outlined text-4xl text-brand-accent mb-6 bg-brand-900 p-4 rounded-2xl shadow-lg w-fit group-hover:bg-brand-accent group-hover:text-white transition-colors">edit_square</span>
+                    <h3 className="text-xl font-bold text-white mb-2">Start from Scratch</h3>
+                    <p className="text-sm text-gray-400 leading-relaxed">Define your premise step-by-step and let the AI weave a completely new tale.</p>
+                </button>
+
+                <button 
+                    onClick={() => setMode('TEMPLATES')}
+                    className="group bg-brand-800 p-8 rounded-3xl border border-brand-700 hover:border-purple-400 hover:bg-brand-800/80 transition-all text-left relative overflow-hidden flex flex-col h-full"
+                >
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-bl-full group-hover:scale-110 transition-transform"></div>
+                    <span className="material-symbols-outlined text-4xl text-purple-400 mb-6 bg-brand-900 p-4 rounded-2xl shadow-lg w-fit group-hover:bg-purple-500 group-hover:text-white transition-colors">style</span>
+                    <h3 className="text-xl font-bold text-white mb-2">Browse Templates</h3>
+                    <p className="text-sm text-gray-400 leading-relaxed">Choose from curated archetypes like African Myth, Sci-Fi Noir, or Fantasy.</p>
                 </button>
 
                 <button 
                     onClick={startContinue}
-                    className="group bg-brand-800 p-6 md:p-10 rounded-3xl border border-brand-700 hover:border-brand-gold hover:bg-brand-800/80 transition-all text-left relative overflow-hidden"
+                    className="group bg-brand-800 p-8 rounded-3xl border border-brand-700 hover:border-brand-gold hover:bg-brand-800/80 transition-all text-left relative overflow-hidden flex flex-col h-full"
                 >
                     <div className="absolute top-0 right-0 w-32 h-32 bg-brand-gold/10 rounded-bl-full group-hover:scale-110 transition-transform"></div>
-                    <span className="material-symbols-outlined text-4xl md:text-5xl text-brand-gold mb-4 md:mb-6 bg-brand-900 p-3 md:p-4 rounded-2xl shadow-lg group-hover:bg-brand-gold group-hover:text-brand-900 transition-colors">import_contacts</span>
-                    <h3 className="text-xl md:text-2xl font-bold text-white mb-2">Continue Story</h3>
-                    <p className="text-sm md:text-base text-gray-400">Upload a PDF/TXT or paste an existing story to continue where you left off.</p>
+                    <span className="material-symbols-outlined text-4xl text-brand-gold mb-6 bg-brand-900 p-4 rounded-2xl shadow-lg w-fit group-hover:bg-brand-gold group-hover:text-brand-900 transition-colors">import_contacts</span>
+                    <h3 className="text-xl font-bold text-white mb-2">Continue Story</h3>
+                    <p className="text-sm text-gray-400 leading-relaxed">Upload a PDF/TXT or paste an existing story to continue where you left off.</p>
                 </button>
             </div>
-             <div className="text-center mt-8 md:mt-12">
-                 <button onClick={onCancel} className="text-gray-500 hover:text-white transition-colors">Cancel</button>
+             <div className="text-center mt-12">
+                 <button onClick={onCancel} className="text-gray-500 hover:text-white transition-colors text-sm">Return to Dashboard</button>
              </div>
         </div>
       );
