@@ -62,6 +62,7 @@ export const InfographicStudio: React.FC = () => {
 
     // Presentation Mode State
     const [slideIndex, setSlideIndex] = useState<number | null>(null);
+    const [slideDirection, setSlideDirection] = useState<'next' | 'prev'>('next');
 
     const handleUseCaseChange = (id: string) => {
         setUseCase(id);
@@ -544,7 +545,13 @@ export const InfographicStudio: React.FC = () => {
                     <div className="flex-1 flex items-center justify-center p-4 md:p-8 overflow-hidden relative">
                         {/* Navigation Arrows */}
                         <button 
-                            onClick={(e) => { e.stopPropagation(); setSlideIndex(prev => prev !== null && prev > 0 ? prev - 1 : prev)}}
+                            onClick={(e) => { 
+                                e.stopPropagation(); 
+                                if (slideIndex !== null && slideIndex > 0) {
+                                    setSlideDirection('prev');
+                                    setSlideIndex(prev => prev! - 1);
+                                }
+                            }}
                             disabled={slideIndex === 0}
                             className="absolute left-4 top-1/2 -translate-y-1/2 w-14 h-14 flex items-center justify-center rounded-full bg-black/20 hover:bg-brand-accent text-white disabled:opacity-0 transition-all z-20"
                         >
@@ -552,7 +559,13 @@ export const InfographicStudio: React.FC = () => {
                         </button>
                         
                         <button 
-                            onClick={(e) => { e.stopPropagation(); setSlideIndex(prev => prev !== null && prev < items.length - 1 ? prev + 1 : prev)}}
+                            onClick={(e) => { 
+                                e.stopPropagation(); 
+                                if (slideIndex !== null && slideIndex < items.length - 1) {
+                                    setSlideDirection('next');
+                                    setSlideIndex(prev => prev! + 1);
+                                }
+                            }}
                             disabled={slideIndex === items.length - 1}
                             className="absolute right-4 top-1/2 -translate-y-1/2 w-14 h-14 flex items-center justify-center rounded-full bg-black/20 hover:bg-brand-accent text-white disabled:opacity-0 transition-all z-20"
                         >
@@ -560,7 +573,10 @@ export const InfographicStudio: React.FC = () => {
                         </button>
 
                         {/* Full Size Slide */}
-                        <div className="max-w-[90vw] max-h-[85vh] aspect-video shadow-2xl rounded-xl overflow-hidden">
+                        <div 
+                            key={slideIndex}
+                            className={`max-w-[90vw] max-h-[85vh] aspect-video shadow-2xl rounded-xl overflow-hidden ${slideDirection === 'next' ? 'animate-slide-in-right' : 'animate-slide-in-left'}`}
+                        >
                             {renderSlide(items[slideIndex], slideIndex, false)}
                         </div>
                     </div>
@@ -573,6 +589,18 @@ export const InfographicStudio: React.FC = () => {
                 .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
                 .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #475569; }
                 .scrollbar-hide::-webkit-scrollbar { display: none; }
+                
+                .animate-slide-in-right { animation: slideInRight 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+                .animate-slide-in-left { animation: slideInLeft 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+                
+                @keyframes slideInRight {
+                    from { opacity: 0; transform: translateX(30px) scale(0.98); }
+                    to { opacity: 1; transform: translateX(0) scale(1); }
+                }
+                @keyframes slideInLeft {
+                    from { opacity: 0; transform: translateX(-30px) scale(0.98); }
+                    to { opacity: 1; transform: translateX(0) scale(1); }
+                }
             `}</style>
         </div>
     );

@@ -463,7 +463,8 @@ export const ChatSection: React.FC = () => {
         };
     });
 
-    const model = isFastMode ? 'gemini-flash-lite-latest' : 'gemini-3-pro-preview';
+    // Use Gemini 3 Flash Preview for "Smart" mode, and Gemini 2.5 Flash for "Fast" mode
+    const model = isFastMode ? 'gemini-2.5-flash' : 'gemini-3-flash-preview';
     
     const response = await sendChatMessage(history, userMsg.text, model, userMsg.attachments);
     
@@ -513,7 +514,7 @@ export const ChatSection: React.FC = () => {
            return { role: m.role, parts };
       });
 
-      const model = isFastMode ? 'gemini-flash-lite-latest' : 'gemini-3-pro-preview';
+      const model = isFastMode ? 'gemini-2.5-flash' : 'gemini-3-flash-preview';
       
       // Call API
       const response = await sendChatMessage(previousHistory, lastUserMsg.text, model, lastUserMsg.attachments);
@@ -806,7 +807,7 @@ export const ChatSection: React.FC = () => {
                              </div>
                              <div className={`px-3 py-1.5 rounded-full text-[10px] md:text-[11px] font-bold transition-all flex items-center gap-1 ${(!isFastMode || attachments.length > 0) ? 'bg-brand-gold text-brand-900 shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}>
                                  <span className="material-symbols-outlined text-[14px]">{attachments.length > 0 ? 'visibility' : 'psychology'}</span>
-                                 {attachments.length > 0 ? 'Pro Vision' : 'Smart (Pro)'}
+                                 {attachments.length > 0 ? 'Pro Vision' : 'Smart (Flash)'}
                              </div>
                          </button>
                     </div>

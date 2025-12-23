@@ -5,7 +5,7 @@ import { StoryConfig, InfographicItem } from "../types";
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 /**
- * Generates the master story using gemini-3-pro-preview with thinking enabled.
+ * Generates the master story using gemini-3-flash-preview with thinking enabled.
  * Uses streaming to provide real-time feedback.
  */
 export const generateStoryStream = async (
@@ -70,11 +70,12 @@ export const generateStoryStream = async (
   `;
 
   try {
+    // Using Gemini 3 Flash Preview as requested
     const responseStream = await ai.models.generateContentStream({
-      model: "gemini-3-pro-preview",
+      model: "gemini-3-flash-preview",
       contents: prompt,
       config: {
-        thinkingConfig: { thinkingBudget: 32768 }, 
+        thinkingConfig: { thinkingBudget: 16384 }, // Adjusted budget for Flash
       },
     });
 
@@ -304,8 +305,9 @@ export const structureInfographicData = async (text: string, style: string, char
   `;
 
   try {
+    // Using Gemini 3 Flash Preview as requested
     const response = await ai.models.generateContent({
-        model: "gemini-3-pro-preview",
+        model: "gemini-3-flash-preview",
         contents: prompt,
         config: {
             responseMimeType: "application/json",
@@ -383,9 +385,12 @@ export const sendChatMessage = async (
     attachmentsBase64?: string[] // Changed to support multiple images
 ): Promise<{ text: string, generatedImage?: string }> => {
   
-  // If user provides images, we MUST use gemini-3-pro-preview for analysis.
+  // If user provides images or complex tasks, use Gemini 3 Flash.
   const hasAttachments = attachmentsBase64 && attachmentsBase64.length > 0;
-  const effectiveModel = hasAttachments ? "gemini-3-pro-preview" : model;
+  // If the user specifically requested 2.5 flash in the calling function, we respect that,
+  // BUT if attachments are present, we usually upgrade. 
+  // Here, we upgrade 'gemini-2.5-flash' to 'gemini-3-flash-preview' if attachments exist.
+  const effectiveModel = hasAttachments ? "gemini-3-flash-preview" : model;
   
   // Construct the current message contents
   const currentParts: any[] = [{ text: newMessage }];
@@ -432,8 +437,8 @@ export const sendChatMessage = async (
       config: {
         tools: [{ functionDeclarations: [generateImageTool] }],
         systemInstruction: systemInstruction,
-        // Enable thinking if using the pro model
-        ...(effectiveModel === 'gemini-3-pro-preview' ? { thinkingConfig: { thinkingBudget: 32768 } } : {})
+        // Enable thinking if using the flash-3 model
+        ...(effectiveModel === 'gemini-3-flash-preview' ? { thinkingConfig: { thinkingBudget: 16384 } } : {})
       }
     });
 
