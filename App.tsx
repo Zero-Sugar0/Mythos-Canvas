@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppView, StoryConfig, HistoryItem, ImageHistoryItem } from './types';
+import { AppView, StoryConfig, HistoryItem, ImageHistoryItem, LoreEntry } from './types';
 import { StoryWizard } from './components/StoryWizard';
 import { StoryView } from './components/StoryView';
 import { ImageStudio } from './components/ImageStudio';
@@ -11,6 +11,7 @@ const App: React.FC = () => {
   const [view, setView] = useState<AppView>(AppView.DASHBOARD);
   const [generatedStory, setGeneratedStory] = useState<string | null>(null);
   const [activeStoryId, setActiveStoryId] = useState<string | null>(null);
+  const [activeLore, setActiveLore] = useState<LoreEntry[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   
@@ -43,7 +44,7 @@ const App: React.FC = () => {
     }
   }, [view]); // Reload when view changes to keep sync
 
-  const saveToHistory = (content: string, config: StoryConfig, existingId?: string) => {
+  const saveToHistory = (content: string, config: StoryConfig, lore: LoreEntry[], existingId?: string) => {
     const titleLine = content.split('\n').find(l => l.startsWith('# '));
     const title = titleLine ? titleLine.replace('# ', '').trim() : 'Untitled Story';
     const excerpt = content.slice(0, 150).replace(/[#*]/g, '') + '...';
@@ -51,9 +52,11 @@ const App: React.FC = () => {
     let newHistory: HistoryItem[];
     let id = existingId || Date.now().toString();
 
+    const configWithLore = { ...config, lore };
+
     if (existingId) {
         // Update existing item
-        newHistory = history.map(h => h.id === existingId ? { ...h, title, excerpt, content, timestamp: Date.now() } : h);
+        newHistory = history.map(h => h.id === existingId ? { ...h, title, excerpt, content, config: configWithLore, lore, timestamp: Date.now() } : h);
         
         // Move to top
         const item = newHistory.find(h => h.id === existingId);
@@ -67,7 +70,8 @@ const App: React.FC = () => {
             title,
             excerpt,
             content,
-            config
+            config: configWithLore,
+            lore
          };
          newHistory = [newItem, ...history];
     }
@@ -80,6 +84,7 @@ const App: React.FC = () => {
   const handleStoryComplete = async (config: StoryConfig) => {
     setIsGenerating(true);
     setActiveStoryId(null); // Reset active ID for new story
+    setActiveLore([]); // Reset lore for new story
     
     // If Continuing, we start with the existing content
     const startingText = config.existingContent ? config.existingContent + '\n\n' : '';
@@ -97,7 +102,7 @@ const App: React.FC = () => {
       });
       // Save when done
       if (fullText) {
-          const newId = saveToHistory(fullText, config);
+          const newId = saveToHistory(fullText, config, []);
           setActiveStoryId(newId);
       }
     } catch (e) {
@@ -114,7 +119,18 @@ const App: React.FC = () => {
       if (activeStoryId) {
           const currentItem = history.find(h => h.id === activeStoryId);
           if (currentItem) {
-              saveToHistory(newContent, currentItem.config, activeStoryId);
+              saveToHistory(newContent, currentItem.config, activeLore, activeStoryId);
+          }
+      }
+  };
+
+  const handleLoreUpdate = (newLore: LoreEntry[]) => {
+      setActiveLore(newLore);
+      if (activeStoryId) {
+          const currentItem = history.find(h => h.id === activeStoryId);
+          if (currentItem) {
+              // Update history immediately with new lore so it persists
+              saveToHistory(currentItem.content, currentItem.config, newLore, activeStoryId);
           }
       }
   };
@@ -122,6 +138,7 @@ const App: React.FC = () => {
   const loadHistoryItem = (item: HistoryItem) => {
       setGeneratedStory(item.content);
       setActiveStoryId(item.id);
+      setActiveLore(item.lore || []);
       setView(AppView.STORY_RESULT);
   };
 
@@ -180,9 +197,11 @@ const App: React.FC = () => {
         return (
             <StoryView 
                 content={generatedStory || ''} 
+                initialLore={activeLore}
                 onReset={() => { setGeneratedStory(null); setActiveStoryId(null); setView(AppView.DASHBOARD); }} 
                 isStreaming={isGenerating}
                 onUpdate={handleStoryUpdate}
+                onLoreUpdate={handleLoreUpdate}
             />
         );
       case AppView.IMAGE_STUDIO:
@@ -233,7 +252,11 @@ const App: React.FC = () => {
                                     <p className="text-sm text-gray-400 line-clamp-3 mb-4">{item.excerpt}</p>
                                     <div className="flex gap-2">
                                         <span className="text-xs px-2 py-1 bg-brand-900 rounded text-brand-accent">{item.config.genre}</span>
-                                        <span className="text-xs px-2 py-1 bg-brand-900 rounded text-gray-400">{item.config.lengthStructure.split(' ')[0]}</span>
+                                        {item.lore && item.lore.length > 0 && (
+                                            <span className="text-xs px-2 py-1 bg-brand-900 rounded text-purple-400 flex items-center gap-1">
+                                                <span className="material-symbols-outlined text-[10px]">public</span> {item.lore.length}
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                             ))}
@@ -635,5 +658,4 @@ const App: React.FC = () => {
     </div>
   );
 };
-
 export default App;

@@ -1,5 +1,5 @@
 import { GoogleGenAI, GenerateContentResponse, FunctionDeclaration, Type, SchemaType } from "@google/genai";
-import { StoryConfig, InfographicItem } from "../types";
+import { StoryConfig, InfographicItem, LoreEntry } from "../types";
 
 // Initialize the client. API_KEY is injected by the environment.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -30,8 +30,32 @@ export const generateStoryStream = async (
   -   Deconstruct the premise into thematic contradictions.
   -   Plan the scene beats for maximum emotional impact.
   -   Select specific, non-generic details (e.g., instead of "a bird," describe "a molting crow pecking at a bottle cap").
+  `;
 
-  STORY CONFIGURATION:
+  // --- LORE INJECTION ---
+  if (config.lore && config.lore.length > 0) {
+      const characters = config.lore.filter(l => l.category === 'Character');
+      const locations = config.lore.filter(l => l.category === 'Location');
+      const rules = config.lore.filter(l => l.category === 'Rule' || l.category === 'Item');
+
+      prompt += `
+      \n*** WORLD BIBLE (STRICT ADHERENCE REQUIRED) ***
+      You must strictly adhere to the following established facts. Do not contradict them.
+
+      CHARACTERS:
+      ${characters.map(c => `- ${c.name}: ${c.description}`).join('\n')}
+
+      LOCATIONS:
+      ${locations.map(l => `- ${l.name}: ${l.description}`).join('\n')}
+
+      RULES/ITEMS:
+      ${rules.map(r => `- ${r.name}: ${r.description}`).join('\n')}
+      `;
+  }
+  // -----------------------
+  
+  prompt += `
+  \nSTORY CONFIGURATION:
   `;
   
   if (isContinuation) {

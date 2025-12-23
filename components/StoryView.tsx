@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { PageData } from '../types';
+import { PageData, LoreEntry } from '../types';
 import { 
     Document, 
     Packer, 
@@ -17,9 +17,11 @@ import { generateImage, rewriteText } from '../services/geminiService';
 
 interface Props {
   content: string;
+  initialLore?: LoreEntry[]; // Passed from history or config
   onReset: () => void;
   isStreaming: boolean;
   onUpdate?: (newContent: string) => void;
+  onLoreUpdate?: (newLore: LoreEntry[]) => void; // Callback to save lore
 }
 
 const CHARS_PER_PAGE = 1200; 
@@ -209,8 +211,8 @@ const EditableBlock: React.FC<EditableBlockProps> = ({ content, onUpdate, onIllu
     );
 };
 
-export const StoryView: React.FC<Props> = ({ content, onReset, isStreaming, onUpdate }) => {
-  const [mode, setMode] = useState<'READER' | 'STUDIO' | 'EXPORT'>('READER');
+export const StoryView: React.FC<Props> = ({ content, initialLore, onReset, isStreaming, onUpdate, onLoreUpdate }) => {
+  const [mode, setMode] = useState<'READER' | 'STUDIO' | 'EXPORT' | 'LORE'>('READER');
   const [pages, setPages] = useState<PageData[]>([]);
   const [currentPage, setCurrentPage] = useState(0);
   const [isFlipping, setIsFlipping] = useState(false);
@@ -221,6 +223,12 @@ export const StoryView: React.FC<Props> = ({ content, onReset, isStreaming, onUp
   const [tocOpen, setTocOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   
+  // Lore State
+  const [lore, setLore] = useState<LoreEntry[]>(initialLore || []);
+  const [newLoreName, setNewLoreName] = useState('');
+  const [newLoreType, setNewLoreType] = useState<'Character' | 'Location' | 'Item' | 'Rule'>('Character');
+  const [newLoreDesc, setNewLoreDesc] = useState('');
+
   // Export Settings
   const [exportOptions, setExportOptions] = useState({
       includeCover: true,
@@ -283,6 +291,27 @@ export const StoryView: React.FC<Props> = ({ content, onReset, isStreaming, onUp
       } finally {
         setProcessingBlockIdx(null);
       }
+  };
+
+  const addLoreEntry = () => {
+      if (!newLoreName.trim() || !newLoreDesc.trim()) return;
+      const newEntry: LoreEntry = {
+          id: Date.now().toString(),
+          name: newLoreName,
+          category: newLoreType,
+          description: newLoreDesc
+      };
+      const updatedLore = [...lore, newEntry];
+      setLore(updatedLore);
+      setNewLoreName('');
+      setNewLoreDesc('');
+      if (onLoreUpdate) onLoreUpdate(updatedLore);
+  };
+
+  const deleteLoreEntry = (id: string) => {
+      const updatedLore = lore.filter(l => l.id !== id);
+      setLore(updatedLore);
+      if (onLoreUpdate) onLoreUpdate(updatedLore);
   };
 
   const base64ToUint8Array = (base64: string) => {
@@ -687,6 +716,12 @@ export const StoryView: React.FC<Props> = ({ content, onReset, isStreaming, onUp
                      <span className="material-symbols-outlined text-sm">edit_note</span> Studio
                  </button>
                  <button 
+                    onClick={() => setMode('LORE')} 
+                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors flex items-center gap-1 ${mode === 'LORE' ? 'bg-purple-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                 >
+                     <span className="material-symbols-outlined text-sm">public</span> World
+                 </button>
+                 <button 
                     onClick={() => setMode('EXPORT')} 
                     className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors flex items-center gap-1 ${mode === 'EXPORT' ? 'bg-green-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}
                  >
@@ -726,6 +761,111 @@ export const StoryView: React.FC<Props> = ({ content, onReset, isStreaming, onUp
                     </div>
                 </div>
             </div>
+        )}
+        
+        {/* --- LORE / WORLD BIBLE MODE --- */}
+        {mode === 'LORE' && (
+             <div className="w-full max-w-4xl flex-1 animate-fade-in p-4 overflow-y-auto">
+                 <div className="bg-brand-800 rounded-3xl border border-brand-700 shadow-2xl p-8 md:p-12 min-h-[80vh]">
+                     <div className="flex justify-between items-end mb-8 border-b border-brand-700 pb-4">
+                         <div>
+                             <h2 className="text-3xl font-serif text-white mb-2 flex items-center gap-2">
+                                <span className="material-symbols-outlined text-purple-400 text-3xl">public</span>
+                                World Bible
+                             </h2>
+                             <p className="text-gray-400 text-sm">Define facts, characters, and rules. The AI will strictly adhere to these entries in future generations.</p>
+                         </div>
+                     </div>
+
+                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                         {/* Entry Form */}
+                         <div className="lg:col-span-1 bg-brand-900/50 p-6 rounded-xl border border-brand-700 h-fit sticky top-4">
+                             <h3 className="text-white font-bold mb-4 flex items-center gap-2">
+                                 <span className="material-symbols-outlined text-brand-gold">add_circle</span> Add Entry
+                             </h3>
+                             <div className="space-y-4">
+                                 <div>
+                                     <label className="text-xs text-gray-500 uppercase font-bold block mb-1">Name</label>
+                                     <input 
+                                        type="text" 
+                                        value={newLoreName}
+                                        onChange={(e) => setNewLoreName(e.target.value)}
+                                        className="w-full bg-brand-800 border border-brand-700 rounded-lg p-2 text-white focus:border-brand-gold outline-none"
+                                        placeholder="e.g. Kael"
+                                     />
+                                 </div>
+                                 <div>
+                                     <label className="text-xs text-gray-500 uppercase font-bold block mb-1">Category</label>
+                                     <select 
+                                        value={newLoreType}
+                                        onChange={(e) => setNewLoreType(e.target.value as any)}
+                                        className="w-full bg-brand-800 border border-brand-700 rounded-lg p-2 text-white focus:border-brand-gold outline-none"
+                                     >
+                                         <option value="Character">Character</option>
+                                         <option value="Location">Location</option>
+                                         <option value="Rule">Rule / Law</option>
+                                         <option value="Item">Item / Artifact</option>
+                                     </select>
+                                 </div>
+                                 <div>
+                                     <label className="text-xs text-gray-500 uppercase font-bold block mb-1">Description</label>
+                                     <textarea 
+                                        value={newLoreDesc}
+                                        onChange={(e) => setNewLoreDesc(e.target.value)}
+                                        className="w-full bg-brand-800 border border-brand-700 rounded-lg p-2 text-white focus:border-brand-gold outline-none h-32 resize-none"
+                                        placeholder="Describe appearance, personality, or rules..."
+                                     />
+                                 </div>
+                                 <button 
+                                    onClick={addLoreEntry}
+                                    disabled={!newLoreName || !newLoreDesc}
+                                    className="w-full py-3 bg-brand-gold text-brand-900 font-bold rounded-lg hover:bg-yellow-500 disabled:opacity-50 transition-colors"
+                                 >
+                                     Save Entry
+                                 </button>
+                             </div>
+                         </div>
+
+                         {/* List View */}
+                         <div className="lg:col-span-2 space-y-6">
+                             {lore.length === 0 ? (
+                                 <div className="text-center py-20 opacity-50 border-2 border-dashed border-brand-700 rounded-xl">
+                                     <span className="material-symbols-outlined text-4xl mb-2">auto_stories</span>
+                                     <p>No lore entries yet. Add one to build your world consistency.</p>
+                                 </div>
+                             ) : (
+                                 <>
+                                    {['Character', 'Location', 'Rule', 'Item'].map(cat => {
+                                        const items = lore.filter(l => l.category === cat);
+                                        if (items.length === 0) return null;
+                                        return (
+                                            <div key={cat} className="animate-fade-in">
+                                                <h4 className="text-brand-accent text-xs font-bold uppercase tracking-widest mb-3 border-b border-brand-700 pb-1">{cat}s</h4>
+                                                <div className="grid gap-3">
+                                                    {items.map(item => (
+                                                        <div key={item.id} className="bg-brand-900 border border-brand-700 p-4 rounded-lg flex justify-between items-start group hover:border-brand-600 transition-colors">
+                                                            <div>
+                                                                <h5 className="text-white font-bold text-lg mb-1">{item.name}</h5>
+                                                                <p className="text-gray-400 text-sm leading-relaxed">{item.description}</p>
+                                                            </div>
+                                                            <button 
+                                                                onClick={() => deleteLoreEntry(item.id)}
+                                                                className="text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1"
+                                                            >
+                                                                <span className="material-symbols-outlined">delete</span>
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )
+                                    })}
+                                 </>
+                             )}
+                         </div>
+                     </div>
+                 </div>
+             </div>
         )}
         
         {/* --- EXPORT MODE --- */}

@@ -1,3 +1,10 @@
+export interface LoreEntry {
+  id: string;
+  name: string;
+  category: 'Character' | 'Location' | 'Item' | 'Rule';
+  description: string;
+}
+
 export interface StoryConfig {
   corePremise: string;
   genre: string;
@@ -11,6 +18,7 @@ export interface StoryConfig {
   endingType: string;
   constraints: string;
   existingContent?: string;
+  lore?: LoreEntry[];
 }
 
 export interface QuestionOption {
@@ -50,6 +58,7 @@ export interface HistoryItem {
   excerpt: string;
   content: string;
   config: StoryConfig;
+  lore: LoreEntry[];
 }
 
 export interface ImageHistoryItem {

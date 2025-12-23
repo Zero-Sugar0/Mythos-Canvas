@@ -1,6 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { StoryConfig, QuestionOption } from '../types';
 import { quickAnalyze } from '../services/geminiService';
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Initialize PDF worker safely handling default export
+const pdfApi = (pdfjsLib as any).default || pdfjsLib;
+if (pdfApi?.GlobalWorkerOptions) {
+    pdfApi.GlobalWorkerOptions.workerSrc = `https://esm.sh/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
+}
 
 interface Props {
   onComplete: (config: StoryConfig) => void;
@@ -136,7 +143,9 @@ export const StoryWizard: React.FC<Props> = ({ onComplete, onCancel }) => {
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Partial<StoryConfig>>({});
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [quickFeedback, setQuickFeedback] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const startNew = () => {
       setAnswers({});
@@ -147,7 +156,7 @@ export const StoryWizard: React.FC<Props> = ({ onComplete, onCancel }) => {
   const startContinue = () => {
       setAnswers({ existingContent: '' });
       setMode('WIZARD');
-      setStep(-1); // Special step for paste
+      setStep(-1); // Special step for paste/upload
   }
 
   const handleNext = async () => {
@@ -179,12 +188,12 @@ export const StoryWizard: React.FC<Props> = ({ onComplete, onCancel }) => {
     if (step === -1) {
         setAnswers(prev => ({ ...prev, existingContent: val }));
     } else {
-        setAnswers(prev => ({ ...prev, [QUESTIONS[step].id]: val }));
+        setAnswers(prev => ({ ...prev, [QUESTIONS[step].id]: val } as any));
     }
   };
 
   const appendOption = (optValue: string) => {
-      const currentVal = answers[QUESTIONS[step].id as keyof StoryConfig] || '';
+      const currentVal = (answers[QUESTIONS[step].id as keyof StoryConfig] as string) || '';
       if (currentVal.includes(optValue)) return;
       const newVal = currentVal ? `${currentVal}, ${optValue}` : optValue;
       handleChange(newVal);
@@ -198,6 +207,45 @@ export const StoryWizard: React.FC<Props> = ({ onComplete, onCancel }) => {
         setIsAnalyzing(false);
     }
   }
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setIsUploading(true);
+      try {
+          let text = '';
+          if (file.type === 'application/pdf') {
+              const arrayBuffer = await file.arrayBuffer();
+              const pdf = await pdfApi.getDocument({ data: arrayBuffer }).promise;
+              
+              for (let i = 1; i <= pdf.numPages; i++) {
+                  const page = await pdf.getPage(i);
+                  const textContent = await page.getTextContent();
+                  const pageText = textContent.items.map((item: any) => item.str).join(' ');
+                  text += pageText + '\n\n';
+              }
+          } else {
+              // Assume Text based
+              text = await new Promise((resolve) => {
+                  const reader = new FileReader();
+                  reader.onload = (ev) => resolve(ev.target?.result as string);
+                  reader.readAsText(file);
+              });
+          }
+
+          if (text) {
+              handleChange(text);
+          }
+      } catch (err) {
+          console.error("File read error", err);
+          alert("Could not read file. Please try pasting the text instead.");
+      } finally {
+          setIsUploading(false);
+          // Reset input
+          if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+  };
 
   // Mode Selection Screen
   if (mode === 'SELECT') {
@@ -222,7 +270,7 @@ export const StoryWizard: React.FC<Props> = ({ onComplete, onCancel }) => {
                     <div className="absolute top-0 right-0 w-32 h-32 bg-brand-gold/10 rounded-bl-full group-hover:scale-110 transition-transform"></div>
                     <span className="material-symbols-outlined text-4xl md:text-5xl text-brand-gold mb-4 md:mb-6 bg-brand-900 p-3 md:p-4 rounded-2xl shadow-lg group-hover:bg-brand-gold group-hover:text-brand-900 transition-colors">import_contacts</span>
                     <h3 className="text-xl md:text-2xl font-bold text-white mb-2">Continue Story</h3>
-                    <p className="text-sm md:text-base text-gray-400">Paste an existing story, chapter, or draft and continue where you left off.</p>
+                    <p className="text-sm md:text-base text-gray-400">Upload a PDF/TXT or paste an existing story to continue where you left off.</p>
                 </button>
             </div>
              <div className="text-center mt-8 md:mt-12">
@@ -242,7 +290,7 @@ export const StoryWizard: React.FC<Props> = ({ onComplete, onCancel }) => {
         {answers.existingContent && (
              <div className="mb-6 p-4 bg-brand-900/50 rounded-xl border border-brand-700/50">
                  <span className="text-brand-gold text-xs font-bold uppercase tracking-wider block mb-1">Context</span>
-                 <p className="text-gray-300 italic line-clamp-3 text-sm">{answers.existingContent}</p>
+                 <p className="text-gray-300 italic line-clamp-3 text-sm">{answers.existingContent.slice(0, 300)}...</p>
              </div>
         )}
 
@@ -250,7 +298,7 @@ export const StoryWizard: React.FC<Props> = ({ onComplete, onCancel }) => {
             {QUESTIONS.map((q) => (
                 <div key={q.id} className="p-3 md:p-4 bg-brand-900/50 rounded-xl border border-brand-700/50 hover:border-brand-600 transition-colors">
                     <span className="text-brand-accent text-[10px] md:text-xs font-bold uppercase tracking-wider block mb-1">{q.label}</span>
-                    <span className="text-gray-200 font-medium text-sm md:text-base">{answers[q.id as keyof StoryConfig] || "Not specified"}</span>
+                    <span className="text-gray-200 font-medium text-sm md:text-base">{(answers[q.id as keyof StoryConfig] as string) || "Not specified"}</span>
                 </div>
             ))}
         </div>
@@ -276,7 +324,7 @@ export const StoryWizard: React.FC<Props> = ({ onComplete, onCancel }) => {
   const currentQ = isPasteStep ? {
       id: 'existingContent',
       label: 'Existing Story Context',
-      desc: 'Paste the story content you have so far.',
+      desc: 'Upload a PDF/TXT file or paste the story content you have so far.',
       placeholder: 'Paste your story text here...',
       options: undefined
   } : QUESTIONS[step];
@@ -300,16 +348,42 @@ export const StoryWizard: React.FC<Props> = ({ onComplete, onCancel }) => {
       <div className="bg-brand-800 p-5 md:p-10 rounded-3xl shadow-2xl border border-brand-700 min-h-[400px] md:min-h-[500px] flex flex-col relative overflow-hidden group">
         <div className="absolute top-0 right-0 w-64 h-64 bg-brand-accent/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
 
-        <div className="relative z-10 flex-1">
-            <label className="block text-xl md:text-3xl font-serif text-white mb-2 leading-tight">
-                {currentQ.label}
-            </label>
+        <div className="relative z-10 flex-1 flex flex-col">
+            <div className="flex justify-between items-start mb-2">
+                <label className="block text-xl md:text-3xl font-serif text-white leading-tight">
+                    {currentQ.label}
+                </label>
+                {isPasteStep && (
+                    <div className="flex-shrink-0">
+                        <input 
+                            type="file" 
+                            accept=".pdf,.txt" 
+                            ref={fileInputRef}
+                            className="hidden" 
+                            onChange={handleFileUpload} 
+                        />
+                        <button 
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={isUploading}
+                            className="flex items-center gap-2 bg-brand-900 border border-brand-700 hover:border-brand-gold text-brand-gold hover:text-white px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wide transition-all shadow-sm active:scale-95"
+                        >
+                            {isUploading ? (
+                                <span className="w-4 h-4 border-2 border-brand-gold border-t-transparent rounded-full animate-spin"></span>
+                            ) : (
+                                <span className="material-symbols-outlined text-lg">upload_file</span>
+                            )}
+                            {isUploading ? 'Reading...' : 'Upload File'}
+                        </button>
+                    </div>
+                )}
+            </div>
+            
             <p className="text-gray-400 mb-6 md:mb-8 text-sm md:text-lg font-light">{currentQ.desc}</p>
             
             <textarea
-                className="w-full bg-brand-900/80 border border-brand-700 rounded-2xl p-4 md:p-6 text-white text-base md:text-lg placeholder-gray-600 focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent transition-all resize-none h-32 md:h-40 shadow-inner"
+                className="w-full bg-brand-900/80 border border-brand-700 rounded-2xl p-4 md:p-6 text-white text-base md:text-lg placeholder-gray-600 focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent transition-all resize-none h-32 md:h-40 shadow-inner flex-1"
                 placeholder={currentQ.placeholder}
-                value={answers[currentQ.id as keyof StoryConfig] || ''}
+                value={(answers[currentQ.id as keyof StoryConfig] as string) || ''}
                 onChange={(e) => handleChange(e.target.value)}
                 autoFocus
             />
