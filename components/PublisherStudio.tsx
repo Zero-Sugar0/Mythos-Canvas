@@ -141,7 +141,7 @@ export const PublisherStudio: React.FC<Props> = ({ activeStoryId, history, onUpd
         setIsGeneratingCover(true);
         setCoverVariations([]);
         try {
-            const prompt = `Book cover art. Title: "${activeStory?.title}". Concept: ${coverPrompt}. High resolution, professional typography not required (art only).`;
+            const prompt = `Book cover art. Title: "${activeStory?.title}". Author: "${config.metadata.author}". Concept: ${coverPrompt}. High resolution, professional typography not required (art only).`;
             const variations = await generateImageVariations(prompt, { aspectRatio: "2:3", model: "gemini-3-pro-image-preview", imageSize: "2K" }, 4);
             setCoverVariations(variations);
             if (!config.coverImage) setConfig(prev => ({ ...prev, coverImage: variations[0] }));
@@ -163,9 +163,6 @@ export const PublisherStudio: React.FC<Props> = ({ activeStoryId, history, onUpd
                 
                 const children: any[] = [];
 
-                // Styles & Fonts
-                // Note: DOCX JS requires fonts to be installed on system usually, but we set the name
-                
                 // --- Title Page ---
                 children.push(
                     new Paragraph({
@@ -185,33 +182,62 @@ export const PublisherStudio: React.FC<Props> = ({ activeStoryId, history, onUpd
 
                 // --- Content ---
                 const lines = activeStory.content.split('\n');
+                let isNextParagraphDropCap = false;
+
                 lines.forEach(line => {
                     const trimmed = line.trim();
                     if (!trimmed) return;
 
                     if (trimmed.startsWith('## ')) {
+                        // Chapter Heading
                         children.push(new Paragraph({
                             text: trimmed.replace('## ', ''),
                             heading: HeadingLevel.HEADING_2,
                             alignment: AlignmentType.CENTER,
                             pageBreakBefore: true,
                             spacing: { before: 800, after: 600 },
-                            run: { font: config.layout.headingFont, size: 32 }
+                            run: { font: config.layout.headingFont, size: 32, bold: true }
                         }));
+                        isNextParagraphDropCap = true;
                     } else if (trimmed.startsWith('---') || trimmed === '* * *') {
+                        // Scene Break
                         children.push(new Paragraph({
                             text: config.layout.sceneDivider === 'line' ? '__________' : '❖',
                             alignment: AlignmentType.CENTER,
                             spacing: { before: 400, after: 400 },
                             run: { font: config.layout.headingFont, size: 24 }
                         }));
+                        isNextParagraphDropCap = false;
                     } else if (!trimmed.startsWith('#')) {
-                        children.push(new Paragraph({
-                            children: [new TextRun({ 
+                        // Regular Paragraph
+                        const runs: TextRun[] = [];
+                        
+                        if (isNextParagraphDropCap && config.layout.dropCaps && trimmed.length > 0) {
+                            // Pseudo Drop Cap logic: First letter big
+                            const firstChar = trimmed.charAt(0);
+                            const rest = trimmed.slice(1);
+                            runs.push(new TextRun({
+                                text: firstChar,
+                                font: config.layout.headingFont,
+                                size: config.layout.fontSize * 2 * 3, // ~3 lines high
+                                bold: true
+                            }));
+                            runs.push(new TextRun({
+                                text: rest,
+                                font: config.layout.bodyFont,
+                                size: config.layout.fontSize * 2
+                            }));
+                            isNextParagraphDropCap = false;
+                        } else {
+                            runs.push(new TextRun({ 
                                 text: trimmed, 
                                 font: config.layout.bodyFont, 
                                 size: config.layout.fontSize * 2 
-                            })],
+                            }));
+                        }
+
+                        children.push(new Paragraph({
+                            children: runs,
                             alignment: config.layout.alignment === 'justify' ? AlignmentType.JUSTIFIED : AlignmentType.LEFT,
                             spacing: { line: config.layout.lineHeight * 240, after: 200 }
                         }));
@@ -230,7 +256,7 @@ export const PublisherStudio: React.FC<Props> = ({ activeStoryId, history, onUpd
                             default: new Header({
                                 children: config.layout.header === 'title-author' ? [
                                     new Paragraph({
-                                        children: [new TextRun({ text: `${activeStory.title}  |  ${config.metadata.author}`, size: 16, color: "666666" })],
+                                        children: [new TextRun({ text: `${activeStory.title}  |  ${config.metadata.author}`, size: 16, color: "666666", font: config.layout.bodyFont })],
                                         alignment: AlignmentType.CENTER
                                     })
                                 ] : []
@@ -240,7 +266,7 @@ export const PublisherStudio: React.FC<Props> = ({ activeStoryId, history, onUpd
                             default: new Footer({
                                 children: config.layout.footer === 'page-num' ? [
                                     new Paragraph({
-                                        children: [new TextRun({ children: [PageNumber.CURRENT], size: 18 })],
+                                        children: [new TextRun({ children: [PageNumber.CURRENT], size: 18, font: config.layout.bodyFont })],
                                         alignment: AlignmentType.CENTER
                                     })
                                 ] : []
@@ -279,10 +305,10 @@ export const PublisherStudio: React.FC<Props> = ({ activeStoryId, history, onUpd
     const paper = PAPER_SIZES.find(p => p.id === config.paperSize) || PAPER_SIZES[1];
     const marginSize = MARGIN_MAP[config.margins || 'normal'];
     
-    // CSS for Preview
+    // CSS for Preview Scaling
     const previewWidth = paper.width * 96 * zoom;
     const previewHeight = paper.height * 96 * zoom;
-    const previewMargin = marginSize * 96 * zoom;
+    const previewPadding = marginSize * 96 * zoom;
 
     return (
         <div className="flex h-[calc(100vh-56px)] bg-[#0f172a] overflow-hidden">
@@ -553,114 +579,131 @@ export const PublisherStudio: React.FC<Props> = ({ activeStoryId, history, onUpd
                         <Ruler orientation="vertical" length={Math.ceil(paper.height * 2)} scale={zoom} />
                     </div>
 
-                    {/* The Paper */}
-                    <div 
-                        className="relative bg-white shadow-2xl transition-all duration-200 origin-top mt-8 ml-8"
-                        style={{
-                            width: `${previewWidth}px`,
-                            height: `${previewHeight}px`,
-                            fontFamily: config.layout.bodyFont === 'Merriweather' ? 'Merriweather, serif' : config.layout.bodyFont,
-                        }}
-                    >
-                        {/* Margins Overlay (Guides) */}
-                        {showGuides && (
-                            <div className="absolute inset-0 pointer-events-none border border-blue-400/30"
+                    <div className="flex flex-col items-center">
+                        {/* The Cover Preview */}
+                        {config.coverImage && (
+                            <div 
+                                className="relative bg-white shadow-2xl transition-all duration-200 origin-top mt-8 ml-8 mb-8 flex-shrink-0"
                                 style={{
-                                    top: `${previewMargin}px`,
-                                    bottom: `${previewMargin}px`,
-                                    left: `${previewMargin}px`,
-                                    right: `${previewMargin}px`,
+                                    width: `${previewWidth}px`,
+                                    height: `${previewHeight}px`,
                                 }}
-                            ></div>
+                            >
+                                <img src={config.coverImage} className="w-full h-full object-cover" alt="Cover" />
+                                {/* Title Overlay on Cover (Optional based on style, usually baked in) */}
+                                <div className="absolute bottom-10 w-full text-center text-white drop-shadow-lg px-4">
+                                    <h1 className="text-4xl font-bold font-serif mb-2">{activeStory.title}</h1>
+                                    <p className="text-xl font-sans opacity-90">{config.metadata.author}</p>
+                                </div>
+                            </div>
                         )}
 
-                        {/* Paper Texture */}
-                        <div className="absolute inset-0 pointer-events-none opacity-[0.03] mix-blend-multiply bg-noise"></div>
-
-                        {/* Content Rendering (Preview of First Chapter) */}
+                        {/* The Paper Content */}
                         <div 
-                            className="absolute inset-0 overflow-hidden text-black"
+                            className="relative bg-white shadow-2xl transition-all duration-200 origin-top ml-8 flex-shrink-0"
                             style={{
-                                top: `${previewMargin}px`,
-                                bottom: `${previewMargin}px`,
-                                left: `${previewMargin}px`,
-                                right: `${previewMargin}px`,
+                                width: `${previewWidth}px`,
+                                height: `${previewHeight}px`,
+                                fontFamily: config.layout.bodyFont === 'Merriweather' ? 'Merriweather, serif' : config.layout.bodyFont,
                             }}
                         >
-                            {/* Running Head */}
-                            {config.layout.header !== 'none' && (
-                                <div className="absolute top-[-20px] w-full text-center text-[10px] uppercase text-gray-400 font-sans tracking-widest">
-                                    {config.layout.header === 'title-author' ? `${activeStory.title} • ${config.metadata.author}` : "Chapter 1"}
-                                </div>
+                            {/* Margins Overlay (Guides) */}
+                            {showGuides && (
+                                <div className="absolute inset-0 pointer-events-none border border-blue-400/30"
+                                    style={{
+                                        top: `${previewPadding}px`,
+                                        bottom: `${previewPadding}px`,
+                                        left: `${previewPadding}px`,
+                                        right: `${previewPadding}px`,
+                                    }}
+                                ></div>
                             )}
 
-                            {/* Render Text */}
-                            <div style={{
-                                fontSize: `${config.layout.fontSize * zoom}pt`,
-                                lineHeight: config.layout.lineHeight,
-                                textAlign: config.layout.alignment,
-                                color: '#1a1a1a'
-                            }}>
-                                {/* Chapter Title */}
-                                <div className="text-center mb-8 mt-4">
-                                    <h2 
-                                        className="font-bold leading-none mb-4" 
-                                        style={{ 
-                                            fontFamily: config.layout.headingFont, 
-                                            fontSize: `${config.layout.fontSize * 2.5 * zoom}pt` 
-                                        }}
-                                    >
-                                        Chapter One
-                                    </h2>
+                            {/* Paper Texture */}
+                            <div className="absolute inset-0 pointer-events-none opacity-[0.03] mix-blend-multiply bg-noise"></div>
+
+                            {/* Content Rendering (Preview of First Chapter) */}
+                            <div 
+                                className="absolute inset-0 overflow-hidden text-black"
+                                style={{
+                                    padding: `${previewPadding}px`,
+                                }}
+                            >
+                                {/* Running Head */}
+                                {config.layout.header !== 'none' && (
+                                    <div className="absolute top-[-20px] w-full text-center text-[10px] uppercase text-gray-400 font-sans tracking-widest">
+                                        {config.layout.header === 'title-author' ? `${activeStory.title} • ${config.metadata.author}` : "Chapter 1"}
+                                    </div>
+                                )}
+
+                                {/* Render Text */}
+                                <div style={{
+                                    fontSize: `${config.layout.fontSize * zoom}pt`,
+                                    lineHeight: config.layout.lineHeight,
+                                    textAlign: config.layout.alignment,
+                                    color: '#1a1a1a'
+                                }}>
+                                    {/* Chapter Title */}
+                                    <div className="text-center mb-8 mt-4">
+                                        <h2 
+                                            className="font-bold leading-none mb-4" 
+                                            style={{ 
+                                                fontFamily: config.layout.headingFont, 
+                                                fontSize: `${config.layout.fontSize * 2.5 * zoom}pt` 
+                                            }}
+                                        >
+                                            Chapter One
+                                        </h2>
+                                    </div>
+
+                                    {/* Body Text */}
+                                    {activeStory.content.split('\n').filter(l => !l.startsWith('#')).slice(0, 15).map((para, idx) => {
+                                        if (!para.trim()) return <div key={idx} className="h-4"></div>;
+                                        
+                                        // Scene Divider Preview
+                                        if (para.trim() === '---' || para.trim() === '* * *') {
+                                            return (
+                                                <div key={idx} className="text-center my-6 text-gray-800 text-xl font-serif">
+                                                    {config.layout.sceneDivider === 'asterisk' && '* * *'}
+                                                    {config.layout.sceneDivider === 'line' && '__________'}
+                                                    {config.layout.sceneDivider === 'flourish' && '❖'}
+                                                    {config.layout.sceneDivider === 'diamond' && '♦'}
+                                                </div>
+                                            )
+                                        }
+
+                                        // Drop Cap Logic
+                                        if (idx === 0 && config.layout.dropCaps) {
+                                            const firstLetter = para.charAt(0);
+                                            const rest = para.slice(1);
+                                            return (
+                                                <p key={idx} className="mb-4">
+                                                    <span 
+                                                        className="float-left mr-2 font-bold leading-[0.8]" 
+                                                        style={{ 
+                                                            fontFamily: config.layout.headingFont, 
+                                                            fontSize: `${config.layout.fontSize * 3.8 * zoom}pt`,
+                                                            marginTop: '-2px'
+                                                        }}
+                                                    >
+                                                        {firstLetter}
+                                                    </span>
+                                                    {rest}
+                                                </p>
+                                            )
+                                        }
+
+                                        return <p key={idx} className="mb-4">{para}</p>
+                                    })}
                                 </div>
 
-                                {/* Body Text */}
-                                {activeStory.content.split('\n').filter(l => !l.startsWith('#')).slice(0, 15).map((para, idx) => {
-                                    if (!para.trim()) return <div key={idx} className="h-4"></div>;
-                                    
-                                    // Scene Divider Preview
-                                    if (para.trim() === '---' || para.trim() === '* * *') {
-                                        return (
-                                            <div key={idx} className="text-center my-6 text-gray-800 text-xl font-serif">
-                                                {config.layout.sceneDivider === 'asterisk' && '* * *'}
-                                                {config.layout.sceneDivider === 'line' && '__________'}
-                                                {config.layout.sceneDivider === 'flourish' && '❖'}
-                                                {config.layout.sceneDivider === 'diamond' && '♦'}
-                                            </div>
-                                        )
-                                    }
-
-                                    // Drop Cap Logic
-                                    if (idx === 0 && config.layout.dropCaps) {
-                                        const firstLetter = para.charAt(0);
-                                        const rest = para.slice(1);
-                                        return (
-                                            <p key={idx} className="mb-4">
-                                                <span 
-                                                    className="float-left mr-2 font-bold leading-[0.8]" 
-                                                    style={{ 
-                                                        fontFamily: config.layout.headingFont, 
-                                                        fontSize: `${config.layout.fontSize * 3.8 * zoom}pt`,
-                                                        marginTop: '-2px'
-                                                    }}
-                                                >
-                                                    {firstLetter}
-                                                </span>
-                                                {rest}
-                                            </p>
-                                        )
-                                    }
-
-                                    return <p key={idx} className="mb-4">{para}</p>
-                                })}
+                                {/* Footer */}
+                                {config.layout.footer === 'page-num' && (
+                                    <div className="absolute bottom-[-20px] w-full text-center text-xs font-serif text-gray-500">
+                                        1
+                                    </div>
+                                )}
                             </div>
-
-                            {/* Footer */}
-                            {config.layout.footer === 'page-num' && (
-                                <div className="absolute bottom-[-20px] w-full text-center text-xs font-serif text-gray-500">
-                                    1
-                                </div>
-                            )}
                         </div>
                     </div>
                 </div>

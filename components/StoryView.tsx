@@ -557,12 +557,20 @@ export const StoryView: React.FC<Props> = ({ content, initialLore, onReset, isSt
                       // Clean markdown
                       const cleanText = trimmed.replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '');
                       const splitText = doc.splitTextToSize(cleanText, contentWidth);
-                      const lineHeight = exportOptions.fontSize * 0.5; // Approx factor
-                      const blockHeight = splitText.length * (lineHeight + 3); // Spacing
                       
-                      checkPageBreak(blockHeight + 5);
-                      doc.text(splitText, margin, y);
-                      y += blockHeight + 5; // Paragraph spacing
+                      // Handle massive blocks line by line
+                      splitText.forEach((line: string) => {
+                          // Approx height for one line
+                          const lineHeight = exportOptions.fontSize * 0.5; 
+                          
+                          if (y + lineHeight > pageHeight - margin) {
+                              doc.addPage();
+                              y = margin;
+                          }
+                          doc.text(line, margin, y);
+                          y += lineHeight + 2; // Line spacing
+                      });
+                      y += 5; // Paragraph spacing
                   }
               });
 
